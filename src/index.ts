@@ -6,10 +6,7 @@ import {
 } from '@metamask/delegation-toolkit';
 import {
   SigningCoordinatorAgent,
-  PorterClient,
-  getPorterUris
 } from '@nucypher/shared';
-import { SessionStaticKey } from '@nucypher/nucypher-core';
 import {
   conditions,
   domains,
@@ -38,127 +35,34 @@ import { createViemTacoAccount } from './taco-account';
 dotenv.config();
 
 // Base Sepolia Chain ID
-const SEPOLIA_CHAIN_ID = 84532;
+const BASE_SEPOLIA_CHAIN_ID = 84532;
 const TACO_DOMAIN = domains.DEVNET;
 const COHORT_ID = 1;
-const COHORT_MULTISIG_ADDRESS = '0xDdBb4c470C7BFFC97345A403aC7FcA77844681D9';
+
+const TACO_SIGNING_COORDINATOR_CHILD_ADDRESS_84532 = '0xcc537b292d142dABe2424277596d8FFCC3e6A12D'; // TODO we can add a function to the SigningCoordinatorAgent to get this address dynamically from chain id
 const AA_VERSION = 'mdt';
-
-// Monkey-patch SigningCoordinatorAgent for Base Sepolia (L2) Support
-if (SEPOLIA_CHAIN_ID === 84532) {
-  const L2_COORDINATOR_ADDRESS = process.env.TACO_SIGNING_COORDINATOR_ADDRESS_84532 || '0xcc537b292d142dABe2424277596d8FFCC3e6A12D';
-
-  // Minimal ABIs
-  const CHILD_ABI = ['function cohortMultisigs(uint32) view returns (address)'];
-  const MULTISIG_ABI = [
-    'function getSigners() view returns (address[])',
-    'function threshold() view returns (uint16)'
-  ];
-
-  SigningCoordinatorAgent.getParticipants = async (provider, domain, cohortId) => {
-    console.log(`[L2] Fetching participants via Child Coordinator: ${L2_COORDINATOR_ADDRESS}`);
-    const coordinator = new ethers.Contract(L2_COORDINATOR_ADDRESS, CHILD_ABI, provider);
-
-    const multisigAddress = await coordinator.cohortMultisigs(cohortId);
-    console.log(`[L2] Cohort Multisig: ${multisigAddress}`);
-
-    // Check if code exists
-    const code = await provider.getCode(multisigAddress);
-    if (code === '0x') {
-      throw new Error(`[L2] No code found at multisig address ${multisigAddress} on chain 84532. Is it deployed?`);
-    } else {
-      console.log(`[L2] Code exists at multisig address (${code.length} bytes)`);
-    }
-
-    const multisig = new ethers.Contract(multisigAddress, MULTISIG_ABI, provider);
-    const owners = await multisig.getSigners();
-    const ownerSet = new Set(owners.map((o: string) => o.toLowerCase()));
-
-    // Use Explicit Porter URL from User
-    const porterUrl = 'https://porter-lynx.nucypher.io/';
-    console.log(`[L2] Fetching Ursulas from Explicit Porter URL: ${porterUrl}...`);
-    const porter = new PorterClient([porterUrl]);
-
-    // Request a smaller number for testnets (lynx has few nodes)
-    let ursulas;
-    try {
-      ursulas = await porter.getUrsulas(3);
-    } catch (e) {
-      console.warn(`[L2] Warning: Failed to fetch 3 Ursulas, trying 1... ${e}`);
-      try {
-        ursulas = await porter.getUrsulas(1);
-      } catch (e2) {
-        console.error(`[L2] Error fetching Ursulas: ${e2}`);
-        ursulas = [];
-      }
-    }
-
-    console.log(`[L2] Owners: ${owners.join(', ')}`);
-    if (ursulas.length > 0) {
-      console.log(`[L2] Porter Ursulas: ${ursulas.map(u => u.checksumAddress).join(', ')}`);
-    } else {
-      console.log(`[L2] Porter Ursulas: (none)`);
-    }
-
-    const participants = ursulas
-      .filter(u => ownerSet.has(u.checksumAddress.toLowerCase()))
-      .map(u => ({
-        provider: u.uri,
-        signerAddress: u.checksumAddress,
-        // encryptingKey is a PublicKey. We need SessionStaticKey.
-        // Assuming we can convert from bytes.
-        signingRequestStaticKey: SessionStaticKey.fromBytes(u.encryptingKey.toCompressedBytes())
-      }));
-
-    console.log(`[L2] Found ${participants.length} matching participants out of ${owners.length} owners.`);
-    if (participants.length === 0) {
-      console.warn('[L2] WARNING: No matching Ursulas found in Porter! Signing will fail.');
-    }
-
-    return participants;
-  };
-
-  SigningCoordinatorAgent.getThreshold = async (provider, domain, cohortId) => {
-    console.log(`[L2] Fetching threshold via Child Coordinator`);
-    const coordinator = new ethers.Contract(L2_COORDINATOR_ADDRESS, CHILD_ABI, provider);
-    const multisigAddress = await coordinator.cohortMultisigs(cohortId);
-    const multisig = new ethers.Contract(multisigAddress, MULTISIG_ABI, provider);
-    const threshold = await multisig.threshold();
-    return threshold;
-  };
-
-  // Mock getSigningCohortConditions to avoid failure
-  SigningCoordinatorAgent.getSigningCohortConditions = async () => {
-    console.log(`[L2] Mocking getSigningCohortConditions (returning null)`);
-    return null;
-  }
-}
 
 async function createTacoSmartAccount(
   publicClient: PublicClient,
-  provider: ethers.providers.JsonRpcProvider,
+  signingCoordinatorProvider: ethers.providers.JsonRpcProvider,
+  signingChainProvider: ethers.providers.JsonRpcProvider,
 ) {
   await initialize();
 
   // On L2, we need to ensure we use the correct multisig address.
   // We fetch it during getParticipants, but we need it for createViemTacoAccount.
   // Let's explicitly fetch it here if on L2.
-  let cohortMultisigAddress = COHORT_MULTISIG_ADDRESS;
-
-  if (SEPOLIA_CHAIN_ID === 84532) {
-    const L2_COORDINATOR_ADDRESS = process.env.TACO_SIGNING_COORDINATOR_ADDRESS_84532 || '0xcc537b292d142dABe2424277596d8FFCC3e6A12D';
-    const coordinator = new ethers.Contract(L2_COORDINATOR_ADDRESS, ['function cohortMultisigs(uint32) view returns (address)'], provider);
-    cohortMultisigAddress = await coordinator.cohortMultisigs(COHORT_ID);
-    console.log(`[L2] Updated Cohort Multisig Address: ${cohortMultisigAddress}`);
-  }
+  const coordinator = new ethers.Contract(TACO_SIGNING_COORDINATOR_CHILD_ADDRESS_84532, ['function cohortMultisigs(uint32) view returns (address)'], signingChainProvider);
+  const cohortMultisigAddress = await coordinator.cohortMultisigs(COHORT_ID);
+  console.log(`[L2] Updated Cohort Multisig Address: ${cohortMultisigAddress}`);
 
   const participants = await SigningCoordinatorAgent.getParticipants(
-    provider,
+    signingCoordinatorProvider,
     TACO_DOMAIN,
     COHORT_ID,
   );
   const threshold = await SigningCoordinatorAgent.getThreshold(
-    provider,
+    signingCoordinatorProvider,
     TACO_DOMAIN,
     COHORT_ID,
   );
@@ -188,33 +92,18 @@ async function signUserOpWithTaco(
   // OR rely on the mocked getSigningCohortConditions if forSigningCohort uses it.
   // forSigningCohort calls getSigningCohortConditions.
 
-  let signingContext;
-  try {
-    signingContext = await conditions.context.ConditionContext.forSigningCohort(
-      provider,
-      TACO_DOMAIN,
-      COHORT_ID,
-      SEPOLIA_CHAIN_ID,
-    );
-  } catch (e) {
-    console.warn('⚠️ Simplified ConditionContext fallback active');
-    // Fallback to "Always True" TimeCondition: blocktime > 0
-    const alwaysTrueCondition = new conditions.base.time.TimeCondition({
-      chain: SEPOLIA_CHAIN_ID,
-      method: 'blocktime',
-      returnValueTest: {
-        comparator: '>',
-        value: 0
-      }
-    });
-    signingContext = new conditions.context.ConditionContext(alwaysTrueCondition);
-  }
-
+  const signingContext = await conditions.context.ConditionContext.forSigningCohort(
+    provider,
+    TACO_DOMAIN,
+    COHORT_ID,
+    BASE_SEPOLIA_CHAIN_ID,
+  );
+  
   return await signUserOp(
     provider,
     TACO_DOMAIN,
     COHORT_ID,
-    SEPOLIA_CHAIN_ID,
+    BASE_SEPOLIA_CHAIN_ID,
     userOp as UserOperationToSign,
     AA_VERSION,
     signingContext,
@@ -228,23 +117,27 @@ async function logBalances(
 ) {
   const eoaBalance = await provider.getBalance(eoaAddress);
   const smartAccountBalance = await provider.getBalance(smartAccountAddress);
-  console.log(`\n💳 EOA Balance: ${ethers.utils.formatEther(eoaBalance)} ETH`);
+  console.log(`\n💳 EOA Balance (${eoaAddress}): ${ethers.utils.formatEther(eoaBalance)} ETH`);
   console.log(
-    `🏦 Smart Account: ${ethers.utils.formatEther(smartAccountBalance)} ETH\n`,
+    `🏦 Smart Account (${smartAccountAddress}): ${ethers.utils.formatEther(smartAccountBalance)} ETH\n`,
   );
 }
 
 async function main() {
   try {
-    const chain = SEPOLIA_CHAIN_ID === 84532 ? baseSepolia : sepolia;
+    // chain to use for signing
+    const chain = BASE_SEPOLIA_CHAIN_ID === 84532 ? baseSepolia : sepolia;
+    const signingChainProvider = new ethers.providers.JsonRpcProvider(process.env.SIGNING_CHAIN_RPC_URL!);
 
-    const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL!);
+    // chain for SigningCoordinatorAgent to get participants/threshold
+    const signingCoordinatorProvider = new ethers.providers.JsonRpcProvider(process.env.ETH_RPC_URL!);
+
     const localAccount = privateKeyToAccount(
       process.env.PRIVATE_KEY as `0x${string}`,
     );
     const publicClient = createPublicClient({
       chain: chain,
-      transport: http(process.env.RPC_URL),
+      transport: http(process.env.SIGNING_CHAIN_RPC_URL),
     });
 
     const paymasterClient = createPaymasterClient({
@@ -264,30 +157,32 @@ async function main() {
     console.log('🔧 Creating TACo smart account...\n');
     const { smartAccount, threshold } = await createTacoSmartAccount(
       publicClient,
-      provider,
+      signingCoordinatorProvider,
+      signingChainProvider,
     );
     console.log(`✅ Smart account created: ${smartAccount.address}`);
     console.log(`🔐 Threshold: ${threshold} signatures required\n`);
+    console.log(`🔍 Checking balances... ${localAccount.address as Address}`);
 
-    await logBalances(provider, localAccount.address, smartAccount.address);
+    await logBalances(signingChainProvider, localAccount.address, smartAccount.address);
 
-    const smartAccountBalance = await provider.getBalance(smartAccount.address);
-    if (smartAccountBalance.lt(ethers.utils.parseEther('0.01'))) {
+    const smartAccountBalance = await signingChainProvider.getBalance(smartAccount.address);
+    if (smartAccountBalance.lt(ethers.utils.parseEther('0.001'))) {
       console.log('💰 Funding smart account...');
       const eoaWallet = new ethers.Wallet(
         process.env.PRIVATE_KEY as string,
-        provider,
+        signingChainProvider,
       );
       const fundTx = await eoaWallet.sendTransaction({
         to: smartAccount.address,
         value: ethers.utils.parseEther('0.001'),
       });
-      await fundTx.wait();
       console.log(`✅ Funded successfully!\n🔗 Tx: ${fundTx.hash}`);
-      await logBalances(provider, localAccount.address, smartAccount.address);
+      await fundTx.wait();
+      await logBalances(signingChainProvider, localAccount.address, smartAccount.address);
     }
 
-    const currentBalance = await provider.getBalance(smartAccount.address);
+    const currentBalance = await signingChainProvider.getBalance(smartAccount.address);
     const gasReserve = ethers.utils.parseEther('0.0005');
     const transferAmount = currentBalance.gt(gasReserve)
       ? currentBalance.sub(gasReserve)
@@ -298,9 +193,8 @@ async function main() {
       account: smartAccount,
       calls: [
         {
-          target: localAccount.address as Address,
+          to: localAccount.address as Address,
           value: BigInt(transferAmount.toString()),
-          data: '0x' as `0x${string}`,
         },
       ],
       ...fee,
@@ -312,8 +206,9 @@ async function main() {
     );
 
     console.log('🔏 Signing with TACo...');
-    // since the provider for this demo is already for sepolia, we can reuse it here
-    const signature = await signUserOpWithTaco(userOp, provider);
+
+    // chain for signing is not necessarily the same as the chain the SigningCoordinator lives on (use corresponding ETH chain that SigningCoordinator is deployed to)
+    const signature = await signUserOpWithTaco(userOp, signingCoordinatorProvider);
     console.log(`✅ Signature collected: ${signature.aggregatedSignature}\n`);
 
     console.log('🚀 Executing transaction...');
@@ -329,11 +224,8 @@ async function main() {
     });
     console.log(`\n🎉 Transaction successful!`);
     console.log(`🔗 Tx: ${receipt.transactionHash}`);
-    console.log(
-      `🌐 View on Etherscan: https://sepolia.etherscan.io/tx/${receipt.transactionHash}\n`,
-    );
 
-    await logBalances(provider, localAccount.address, smartAccount.address);
+    await logBalances(signingChainProvider, localAccount.address, smartAccount.address);
     console.log('✨ Demo completed successfully! ✨');
     process.exit(0);
   } catch (error: unknown) {
