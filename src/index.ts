@@ -1,32 +1,12 @@
 #!/usr/bin/env node
 
-import {
-  Implementation,
-  toMetaMaskSmartAccount,
-} from '@metamask/delegation-toolkit';
-import {
-  SigningCoordinatorAgent,
-} from '@nucypher/shared';
-import {
-  conditions,
-  domains,
-  initialize,
-  signUserOp,
-  UserOperationToSign,
-} from '@nucypher/taco';
+import { Implementation, toMetaMaskSmartAccount } from '@metamask/delegation-toolkit';
+import { SigningCoordinatorAgent } from '@nucypher/shared';
+import { conditions, domains, initialize, signUserOp, UserOperationToSign } from '@nucypher/taco';
 import * as dotenv from 'dotenv';
 import { ethers } from 'ethers';
-import {
-  Address,
-  createPublicClient,
-  http,
-  parseEther,
-  PublicClient,
-} from 'viem';
-import {
-  createBundlerClient,
-  createPaymasterClient,
-} from 'viem/account-abstraction';
+import { Address, createPublicClient, http, parseEther, PublicClient } from 'viem';
+import { createBundlerClient, createPaymasterClient } from 'viem/account-abstraction';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia, sepolia } from 'viem/chains';
 
@@ -52,7 +32,11 @@ async function createTacoSmartAccount(
   // On L2, we need to ensure we use the correct multisig address.
   // We fetch it during getParticipants, but we need it for createViemTacoAccount.
   // Let's explicitly fetch it here if on L2.
-  const coordinator = new ethers.Contract(TACO_SIGNING_COORDINATOR_CHILD_ADDRESS_84532, ['function cohortMultisigs(uint32) view returns (address)'], signingChainProvider);
+  const coordinator = new ethers.Contract(
+    TACO_SIGNING_COORDINATOR_CHILD_ADDRESS_84532,
+    ['function cohortMultisigs(uint32) view returns (address)'],
+    signingChainProvider,
+  );
   const cohortMultisigAddress = await coordinator.cohortMultisigs(COHORT_ID);
   console.log(`[L2] Updated Cohort Multisig Address: ${cohortMultisigAddress}`);
 
@@ -74,7 +58,8 @@ async function createTacoSmartAccount(
 
   const smartAccount = await toMetaMaskSmartAccount({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    client: publicClient as any, // Required due to viem/delegation-toolkit type incompatibilities
+    // @ts-expect-error - Type incompatibility between viem versions used by delegation-toolkit and this project
+    client: publicClient,
     implementation: Implementation.MultiSig,
     deployParams: [signers, BigInt(threshold)],
     deploySalt: '0x' as `0x${string}`,
@@ -98,7 +83,7 @@ async function signUserOpWithTaco(
     COHORT_ID,
     BASE_SEPOLIA_CHAIN_ID,
   );
-  
+
   return await signUserOp(
     provider,
     TACO_DOMAIN,
@@ -127,14 +112,16 @@ async function main() {
   try {
     // chain to use for signing
     const chain = BASE_SEPOLIA_CHAIN_ID === 84532 ? baseSepolia : sepolia;
-    const signingChainProvider = new ethers.providers.JsonRpcProvider(process.env.SIGNING_CHAIN_RPC_URL!);
+    const signingChainProvider = new ethers.providers.JsonRpcProvider(
+      process.env.SIGNING_CHAIN_RPC_URL!,
+    );
 
     // chain for SigningCoordinatorAgent to get participants/threshold
-    const signingCoordinatorProvider = new ethers.providers.JsonRpcProvider(process.env.ETH_RPC_URL!);
-
-    const localAccount = privateKeyToAccount(
-      process.env.PRIVATE_KEY as `0x${string}`,
+    const signingCoordinatorProvider = new ethers.providers.JsonRpcProvider(
+      process.env.ETH_RPC_URL!,
     );
+
+    const localAccount = privateKeyToAccount(process.env.PRIVATE_KEY as `0x${string}`);
     const publicClient = createPublicClient({
       chain: chain,
       transport: http(process.env.SIGNING_CHAIN_RPC_URL),
@@ -156,7 +143,7 @@ async function main() {
 
     console.log('🔧 Creating TACo smart account...\n');
     const { smartAccount, threshold } = await createTacoSmartAccount(
-      publicClient,
+      publicClient as any, // Cast to any to avoid strict PublicClient mismatch
       signingCoordinatorProvider,
       signingChainProvider,
     );
@@ -169,13 +156,12 @@ async function main() {
     const smartAccountBalance = await signingChainProvider.getBalance(smartAccount.address);
     if (smartAccountBalance.lt(ethers.utils.parseEther('0.001'))) {
       console.log('💰 Funding smart account...');
-      const eoaWallet = new ethers.Wallet(
-        process.env.PRIVATE_KEY as string,
-        signingChainProvider,
-      );
+      const eoaWallet = new ethers.Wallet(process.env.PRIVATE_KEY as string, signingChainProvider);
+      const nonce = await signingChainProvider.getTransactionCount(eoaWallet.address, 'pending');
       const fundTx = await eoaWallet.sendTransaction({
         to: smartAccount.address,
         value: ethers.utils.parseEther('0.001'),
+        nonce,
       });
       console.log(`✅ Funded successfully!\n🔗 Tx: ${fundTx.hash}`);
       await fundTx.wait();
@@ -189,6 +175,7 @@ async function main() {
       : parseEther('0.0001');
 
     console.log('📝 Preparing transaction...');
+    // @ts-expect-error - Type instantiation is excessively deep
     const userOp = await bundlerClient.prepareUserOperation({
       account: smartAccount,
       calls: [
@@ -199,11 +186,8 @@ async function main() {
       ],
       ...fee,
       verificationGasLimit: BigInt(500_000),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any); // Required due to viem/delegation-toolkit type incompatibilities
-    console.log(
-      `💸 Transfer amount: ${ethers.utils.formatEther(transferAmount)} ETH\n`,
-    );
+    });
+    console.log(`💸 Transfer amount: ${ethers.utils.formatEther(transferAmount)} ETH\n`);
 
     console.log('🔏 Signing with TACo...');
 
@@ -213,10 +197,9 @@ async function main() {
 
     console.log('🚀 Executing transaction...');
     const userOpHash = await bundlerClient.sendUserOperation({
-      ...userOp,
+      ...(userOp as any),
       signature: signature.aggregatedSignature as `0x${string}`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any); // Required due to viem/delegation-toolkit type incompatibilities
+    });
     console.log(`📝 UserOp Hash: ${userOpHash}`);
 
     const { receipt } = await bundlerClient.waitForUserOperationReceipt({

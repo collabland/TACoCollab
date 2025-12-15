@@ -67,10 +67,10 @@ The demo has two main helper functions:
 
 ```typescript
 // Creates smart account with TACo signers
-createTacoSmartAccount()
+createTacoSmartAccount();
 
 // Signs UserOperation with TACo network
-signUserOpWithTaco()
+signUserOpWithTaco();
 ```
 
 All the core logic is in `src/index.ts` - easy to understand and modify.

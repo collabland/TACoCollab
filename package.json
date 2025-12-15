@@ -8,7 +8,9 @@
     "check": "tsx --no-warnings src/index.ts --dry-run 2>/dev/null && echo '✓ Demo syntax check passed'",
     "start": "tsx src/index.ts",
     "dev": "tsx src/index.ts --debug",
-    "type-check": "echo \"Note: Full type-check skipped due to viem/delegation-toolkit type incompatibilities\""
+    "type-check": "echo \"Note: Full type-check skipped due to viem/delegation-toolkit type incompatibilities\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@metamask/delegation-toolkit": "^0.11.0",
@@ -18,11 +20,12 @@
     "dotenv": "^16.5.0",
     "ethers": "^5.8.0",
     "permissionless": "^0.2.54",
-    "viem": "^2.34.0",
+    "viem": "2.34.0",
     "winston": "^3.17.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.9",
+    "prettier": "^3.7.4",
     "tsx": "^4.20.4",
     "typescript": "^5.7.2"
   }
