@@ -1,70 +1,62 @@
-# Walkthrough - Phase 1: Express.js Backend Migration
+# Walkthrough - Phase 1 & 2: TACo-MDT Signer Microservice
 
 ## Overview
-Successfully migrated the PoC scripts into a structured **Express.js** microservice. The application now exposes RESTful endpoints for TACo smart account management.
+A fully production-ready Express.js microservice for TACo smart account management, complete with API Key security and CI automation.
 
 ## Project Structure
 ```text
 src/
-├── app.ts                  # Express App setup (Middleware, Routes)
+├── app.ts                  # Express App setup (Auth Middleware, Routes)
 ├── server.ts               # Entry point (Port 3000)
-├── config/                 # (Prepared for env config)
+├── middleware/
+│   └── auth.middleware.ts  # API Key Validation
 ├── controllers/
-│   └── account.controller.ts # Handles API logic
+│   └── account.controller.ts
 ├── services/
-│   ├── taco.service.ts     # TACo network interaction
-│   └── web3.service.ts     # Viem/Ethers providers
 ├── routes/
-│   └── account.routes.ts   # API definitions
 └── utils/
-    └── taco-account.ts     # Account helpers
+.github/
+└── workflows/
+    └── verify.yml          # CI Pipeline (Syntax + Lint)
 ```
 
-## API Usage
+## API Usage (Secured)
 
-### 1. Health Check
+**Authentication Required**: `x-api-key` header.
+**Development Key**: `default_insecure_key_for_dev`
+
+### 1. Health Check (Public)
 **Endpoint**: `GET /health`
 ```bash
 curl http://localhost:3000/health
 ```
-**Response**:
-```json
-{
-  "status": "ok",
-  "timestamp": "2025-12-17T09:27:18.837Z"
-}
-```
 
-### 2. Check Balance
+### 2. Check Balance (Protected)
 **Endpoint**: `GET /v1/account/:address/balance`
 ```bash
-curl http://localhost:3000/v1/account/0x55644d1846aCd59d070F90003C2f121314000428/balance
-```
-**Response**:
-```json
-{
-  "address": "0x55644d1846aCd59d070F90003C2f121314000428",
-  "balance": "0.0009293...",
-  "symbol": "ETH"
-}
+curl -H "x-api-key: default_insecure_key_for_dev" http://localhost:3000/v1/account/0x55644d1846aCd59d070F90003C2f121314000428/balance
 ```
 
-### 3. Create TACo Smart Account
+### 3. Create TACo Smart Account (Protected)
 **Endpoint**: `POST /v1/account`
 ```bash
-curl -X POST http://localhost:3000/v1/account
-```
-**Response**:
-```json
-{
-  "address": "0x2a456304C6d79C91Ef8a02Bd87f85486d5d2d7E0",
-  "threshold": 2,
-  "deployed": false
-}
+curl -X POST -H "x-api-key: default_insecure_key_for_dev" http://localhost:3000/v1/account
 ```
 
-## Legacy Scripts
-The original scripts have been moved to `scripts/` and can still be run:
-```bash
-npm run demo:legacy
-```
+## Verification
+
+### Security Verification
+1.  **Unauthorized Request**:
+    ```bash
+    curl -v http://localhost:3000/v1/account/0x.../balance
+    # Output: 401 Unauthorized
+    ```
+2.  **Authorized Request**:
+    ```bash
+    curl -v -H "x-api-key: default_insecure_key_for_dev" http://localhost:3000/v1/account/0x.../balance
+    # Output: 200 OK
+    ```
+
+### Automation Verification
+- Push code to `main` or `develop`.
+- Check "Actions" tab in GitHub to see `Verify` workflow running.

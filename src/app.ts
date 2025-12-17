@@ -11,7 +11,8 @@ app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 
-app.use('/v1/account', accountRouter);
+import { authMiddleware } from './middleware/auth.middleware';
+app.use('/v1/account', authMiddleware, accountRouter);
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
