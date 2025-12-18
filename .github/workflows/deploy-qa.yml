@@ -42,9 +42,10 @@ jobs:
           fetch-depth: 0
 
       - name: Deploy to Heroku
-        uses: koneki/heroku-deploy-action@v3.3.3
-        with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: 'taco-collab-qa'
-          heroku_email: ${{ secrets.HEROKU_EMAIL }}
-          dontautocreate: true
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+          HEROKU_APP_NAME: 'taco-collab-qa'
+          HEROKU_EMAIL: ${{ secrets.HEROKU_EMAIL }}
+        run: |
+          git remote add heroku https://heroku:$HEROKU_API_KEY@git.heroku.com/$HEROKU_APP_NAME.git
+          git push heroku HEAD:master -f
