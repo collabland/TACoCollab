@@ -30,7 +30,7 @@ export class TacoService {
     console.log('TACo initialized');
   }
 
-  public async createSmartAccount() {
+  public async createSmartAccount(userId: string) {
     await this.initializeTaco();
     const web3 = Web3Service.getInstance();
 
@@ -62,7 +62,7 @@ export class TacoService {
       client: web3.publicClient,
       implementation: Implementation.MultiSig,
       deployParams: [signers, BigInt(threshold)],
-      deploySalt: '0x' as `0x${string}`, // Static salt for now, can be parameterized later
+      deploySalt: ethers.utils.id(userId) as `0x${string}`,
       signatory: [{ account: tacoAccount }],
     });
 

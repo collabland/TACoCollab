@@ -6,8 +6,13 @@ import { Web3Service } from '../services/web3.service';
 export class AccountController {
   static async createAccount(req: Request, res: Response) {
     try {
+      const { userId } = req.body;
+      if (!userId) {
+        res.status(400).json({ error: 'userId is required' });
+        return;
+      }
       const service = TacoService.getInstance();
-      const result = await service.createSmartAccount();
+      const result = await service.createSmartAccount(userId);
       res.json(result);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
