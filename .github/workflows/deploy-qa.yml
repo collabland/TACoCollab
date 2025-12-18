@@ -42,7 +42,7 @@ jobs:
           fetch-depth: 0
 
       - name: Deploy to Heroku
-        uses: akhileshns/heroku-deploy@v3.13.15
+        uses: koneki/heroku-deploy-action@v3.3.3
         with:
           heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
           heroku_app_name: 'taco-collab-qa'
