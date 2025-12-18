@@ -1,14 +1,23 @@
 {
-  "include": ["src/**/*"],
-  "exclude": ["**/node_modules/**/*", "node_modules/**/*", "dist/**/*"],
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "**/node_modules/**/*",
+    "node_modules/**/*",
+    "dist/**/*"
+  ],
   "compilerOptions": {
-    "lib": ["ES2020", "dom"],
+    "lib": [
+      "ES2020",
+      "dom"
+    ],
     "module": "CommonJS",
     "moduleResolution": "node",
     "target": "ES2020",
     "outDir": "dist",
     "rootDir": "src",
-    "noEmit": true,
+    "noEmit": false,
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,

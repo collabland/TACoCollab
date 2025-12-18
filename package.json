@@ -6,7 +6,8 @@
   "author": "NuCypher <dev@nucypher.com>",
   "scripts": {
     "check": "tsx --no-warnings src/server.ts --dry-run 2>/dev/null && echo '✓ Syntax check passed'",
-    "start": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "build": "esbuild src/server.ts --bundle --platform=node --outfile=dist/server.js --packages=external",
     "dev": "tsx watch src/server.ts",
     "demo:legacy": "tsx scripts/index.ts",
     "type-check": "echo \"Note: Full type-check skipped due to viem/delegation-toolkit type incompatibilities\"",
@@ -33,6 +34,7 @@
     "@types/express": "^5.0.6",
     "@types/morgan": "^1.9.10",
     "@types/node": "^20.17.9",
+    "esbuild": "^0.27.2",
     "prettier": "^3.7.4",
     "tsx": "^4.20.4",
     "typescript": "^5.7.2"
