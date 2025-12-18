@@ -1,7 +1,4 @@
-import {
-    Implementation,
-    toMetaMaskSmartAccount,
-} from '@metamask/delegation-toolkit';
+import { Implementation, toMetaMaskSmartAccount } from '@metamask/delegation-toolkit';
 import { SigningCoordinatorAgent } from '@nucypher/shared';
 import { domains, initialize } from '@nucypher/taco';
 import { ethers } from 'ethers';
@@ -14,7 +11,8 @@ export class TacoService {
   private initialized = false;
   private readonly TACO_DOMAIN = domains.DEVNET;
   private readonly COHORT_ID = 1;
-  private readonly TACO_SIGNING_COORDINATOR_CHILD_ADDRESS = '0xcc537b292d142dABe2424277596d8FFCC3e6A12D';
+  private readonly TACO_SIGNING_COORDINATOR_CHILD_ADDRESS =
+    '0xcc537b292d142dABe2424277596d8FFCC3e6A12D';
 
   private constructor() {}
 
@@ -38,9 +36,9 @@ export class TacoService {
 
     // Fetch cohort multisig
     const coordinator = new ethers.Contract(
-        this.TACO_SIGNING_COORDINATOR_CHILD_ADDRESS,
-        ['function cohortMultisigs(uint32) view returns (address)'],
-        web3.signingChainProvider
+      this.TACO_SIGNING_COORDINATOR_CHILD_ADDRESS,
+      ['function cohortMultisigs(uint32) view returns (address)'],
+      web3.signingChainProvider,
     );
     const cohortMultisigAddress = await coordinator.cohortMultisigs(this.COHORT_ID);
 
@@ -69,9 +67,9 @@ export class TacoService {
     });
 
     return {
-        address: smartAccount.address,
-        threshold,
-        deployed: false // Implementation.MultiSig is counterfactual
+      address: smartAccount.address,
+      threshold,
+      deployed: false, // Implementation.MultiSig is counterfactual
     };
   }
 }

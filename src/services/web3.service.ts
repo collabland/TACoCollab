@@ -20,8 +20,12 @@ export class Web3Service {
     const chain = Web3Service.BASE_SEPOLIA_CHAIN_ID === 84532 ? baseSepolia : sepolia;
 
     // Ethers providers
-    this.signingChainProvider = new ethers.providers.JsonRpcProvider(process.env.SIGNING_CHAIN_RPC_URL!);
-    this.signingCoordinatorProvider = new ethers.providers.JsonRpcProvider(process.env.ETH_RPC_URL!);
+    this.signingChainProvider = new ethers.providers.JsonRpcProvider(
+      process.env.SIGNING_CHAIN_RPC_URL!,
+    );
+    this.signingCoordinatorProvider = new ethers.providers.JsonRpcProvider(
+      process.env.ETH_RPC_URL!,
+    );
 
     // Viem clients
     this.publicClient = createPublicClient({

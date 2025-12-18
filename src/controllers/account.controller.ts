@@ -9,9 +9,9 @@ export class AccountController {
       const service = TacoService.getInstance();
       const result = await service.createSmartAccount();
       res.json(result);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-        console.error(error);
+      console.error(error);
       res.status(500).json({ error: error.message || 'Failed to create account' });
     }
   }
@@ -24,9 +24,9 @@ export class AccountController {
       res.json({
         address,
         balance: ethers.utils.formatEther(balance),
-        symbol: 'ETH'
+        symbol: 'ETH',
       });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
