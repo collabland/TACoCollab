@@ -2,9 +2,9 @@ name: Deploy to QA
 
 on:
   workflow_run:
-    workflows: ["Verify"]
+    workflows: ['Verify']
     branches: [develop]
-    types: 
+    types:
       - completed
 
 jobs:
