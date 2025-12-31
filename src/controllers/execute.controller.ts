@@ -1,22 +1,41 @@
 import { Request, Response } from 'express';
-import { DiscordInteractionPayload } from '../types/discord';
+import { TacoService } from '../services/taco.service';
 
 export class ExecuteController {
   static async execute(req: Request, res: Response) {
     try {
-      const { discordPayload } = req.body as { discordPayload?: DiscordInteractionPayload };
-
-      if (!discordPayload) {
-        res.status(400).json({ error: 'discordPayload is required' });
+      const { userId, to, amountEth } = req.body;
+      if (!userId) {
+        res.status(400).json({ error: 'userId is required' });
         return;
       }
 
-      // TODO: Implement orchestration of transaction execution using the Discord payload.
-      // This will involve constructing and signing UserOperations in future tasks.
+      if (!to) {
+        res.status(400).json({ error: 'receiver address (to) is required' });
+        return;
+      }
+
+      if (!amountEth) {
+        res.status(400).json({ error: 'amountEth is required' });
+        return;
+      }
+
+      const tacoService = TacoService.getInstance();
+
+      const result = await tacoService.transferFromSmartAccount({
+        userId: String(userId),
+        to,
+        amountEth,
+      });
 
       res.json({
-        status: 'pending',
+        status: 'submitted',
         message: 'Execution started',
+        senderSmartAccount: result.smartAccountAddress,
+        receiver: result.to,
+        amountEth: result.amountEth,
+        userOpHash: result.userOpHash,
+        transactionHash: result.transactionHash,
       });
     } catch (error) {
       console.error(error);

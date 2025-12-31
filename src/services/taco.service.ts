@@ -1,8 +1,8 @@
 import { Implementation, toMetaMaskSmartAccount } from '@metamask/delegation-toolkit';
 import { SigningCoordinatorAgent } from '@nucypher/shared';
-import { domains, initialize } from '@nucypher/taco';
+import { conditions, domains, initialize, signUserOp, UserOperationToSign } from '@nucypher/taco';
 import { ethers } from 'ethers';
-import { Address } from 'viem';
+import { Address, parseEther } from 'viem';
 import { createViemTacoAccount } from '../utils/taco-account';
 import { Web3Service } from './web3.service';
 
@@ -13,6 +13,7 @@ export class TacoService {
   private readonly COHORT_ID = 1;
   private readonly TACO_SIGNING_COORDINATOR_CHILD_ADDRESS =
     '0xcc537b292d142dABe2424277596d8FFCC3e6A12D';
+  private readonly AA_VERSION = 'mdt';
 
   private constructor() {}
 
@@ -31,6 +32,78 @@ export class TacoService {
   }
 
   public async createSmartAccount(userId: string) {
+    const { smartAccount, threshold } = await this.getSmartAccount(userId);
+
+    return {
+      address: (smartAccount as { address: string }).address,
+      threshold,
+      deployed: false, // Implementation.MultiSig is counterfactual
+    };
+  }
+
+  public async transferFromSmartAccount(params: {
+    userId: string;
+    to: Address;
+    amountEth: string;
+  }): Promise<{
+    smartAccountAddress: string;
+    to: string;
+    amountEth: string;
+    userOpHash: string;
+    transactionHash: string;
+  }> {
+    await this.initializeTaco();
+    const web3 = Web3Service.getInstance();
+    const { smartAccount } = await this.getSmartAccount(params.userId);
+    const value = ethers.utils.parseEther(params.amountEth);
+    const baseGasPrice = await web3.publicClient.getGasPrice();
+
+    // Pimlico bundler enforces a minimum priority fee of 1_000_000 wei
+    // (see error: "maxPriorityFeePerGas must be at least 1000000").
+    const MIN_PRIORITY_FEE = 1_000_000n;
+    const suggestedPriorityFee = baseGasPrice / 10n;
+
+    const fee = {
+      maxFeePerGas: (baseGasPrice * 12n) / 10n,
+      maxPriorityFeePerGas:
+        suggestedPriorityFee < MIN_PRIORITY_FEE ? MIN_PRIORITY_FEE : suggestedPriorityFee,
+    };
+
+    const userOp = await web3.bundlerClient.prepareUserOperation({
+      account: smartAccount,
+      calls: [
+        {
+          to: params.to,
+          value: BigInt(value.toString()),
+        },
+      ],
+      ...fee,
+      verificationGasLimit: BigInt(500_000),
+    });
+    const signature = await this.signUserOpWithTaco(userOp as Record<string, unknown>);
+    const userOpHash = await web3.bundlerClient.sendUserOperation({
+      ...(userOp as any),
+      signature: signature.aggregatedSignature as `0x${string}`,
+    });
+    const { receipt } = await web3.bundlerClient.waitForUserOperationReceipt({
+      hash: userOpHash,
+    });
+
+    return {
+      smartAccountAddress: (smartAccount as { address: string }).address,
+      to: params.to,
+      amountEth: params.amountEth,
+      userOpHash,
+      transactionHash: receipt.transactionHash,
+    };
+  }
+
+  /**
+   * Internal helper to derive (or counterfactually create) the TACo smart account.
+   */
+  private async getSmartAccount(
+    userId: string,
+  ): Promise<{ smartAccount: unknown; threshold: number }> {
     await this.initializeTaco();
     const web3 = Web3Service.getInstance();
 
@@ -66,10 +139,30 @@ export class TacoService {
       signatory: [{ account: tacoAccount }],
     });
 
-    return {
-      address: smartAccount.address,
-      threshold,
-      deployed: false, // Implementation.MultiSig is counterfactual
-    };
+    return { smartAccount, threshold };
+  }
+
+  /**
+   * Internal helper to sign a prepared UserOperation using TACo.
+   */
+  private async signUserOpWithTaco(userOp: Record<string, unknown>) {
+    const web3 = Web3Service.getInstance();
+
+    const signingContext = await conditions.context.ConditionContext.forSigningCohort(
+      web3.signingCoordinatorProvider,
+      this.TACO_DOMAIN,
+      this.COHORT_ID,
+      Web3Service.BASE_SEPOLIA_CHAIN_ID,
+    );
+
+    return await signUserOp(
+      web3.signingCoordinatorProvider,
+      this.TACO_DOMAIN,
+      this.COHORT_ID,
+      Web3Service.BASE_SEPOLIA_CHAIN_ID,
+      userOp as UserOperationToSign,
+      this.AA_VERSION,
+      signingContext,
+    );
   }
 }
