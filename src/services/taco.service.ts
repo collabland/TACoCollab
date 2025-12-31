@@ -37,7 +37,7 @@ export class TacoService {
     return {
       address: (smartAccount as { address: string }).address,
       threshold,
-      deployed: false, // Implementation.MultiSig is counterfactual
+      deployed: false,
     };
   }
 
