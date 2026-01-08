@@ -7,7 +7,6 @@ export class ExecuteController {
     try {
       const { userId, to, amountEth, discordTimestamp, discordSignature, discordPayload } =
         req.body;
-      console.log('req.body', req.body);
       if (!userId) {
         res.status(400).json({ error: 'userId is required' });
         return;
