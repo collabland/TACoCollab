@@ -2,17 +2,14 @@ import { Implementation, toMetaMaskSmartAccount } from '@metamask/delegation-too
 import { SigningCoordinatorAgent } from '@nucypher/shared';
 import { conditions, domains, initialize, signUserOp, UserOperationToSign } from '@nucypher/taco';
 import { ethers } from 'ethers';
-import { Address, parseEther } from 'viem';
+import { Address } from 'viem';
 import { createViemTacoAccount } from '../utils/taco-account';
 import { Web3Service } from './web3.service';
+import { CHAIN_CONFIG, SupportedChainKey } from '../config/chains';
 
 export class TacoService {
   private static instance: TacoService;
   private initialized = false;
-  private readonly TACO_DOMAIN = domains.DEVNET;
-  private readonly COHORT_ID = 1;
-  private readonly TACO_SIGNING_COORDINATOR_CHILD_ADDRESS =
-    '0xcc537b292d142dABe2424277596d8FFCC3e6A12D';
   private readonly AA_VERSION = 'mdt';
 
   private constructor() {}
@@ -31,8 +28,8 @@ export class TacoService {
     console.log('TACo initialized');
   }
 
-  public async createSmartAccount(userId: string) {
-    const { smartAccount, threshold } = await this.getSmartAccount(userId);
+  public async createSmartAccount(userId: string, chainKey: SupportedChainKey) {
+    const { smartAccount, threshold } = await this.getSmartAccount(userId, chainKey);
 
     return {
       address: (smartAccount as { address: string }).address,
@@ -44,18 +41,25 @@ export class TacoService {
   public async transferFromSmartAccount(params: {
     userId: string;
     to: Address;
-    amountEth: string;
+    amount: string;
+    chain: SupportedChainKey;
+    discordContext: {
+      timestamp: string;
+      signature: string;
+      payload: string;
+    };
   }): Promise<{
     smartAccountAddress: string;
     to: string;
-    amountEth: string;
+    amount: string;
     userOpHash: string;
     transactionHash: string;
   }> {
     await this.initializeTaco();
-    const web3 = Web3Service.getInstance();
-    const { smartAccount } = await this.getSmartAccount(params.userId);
-    const value = ethers.utils.parseEther(params.amountEth);
+    const { chain } = params;
+    const web3 = Web3Service.getInstance(chain);
+    const { smartAccount } = await this.getSmartAccount(params.userId, chain);
+    const value = ethers.utils.parseEther(params.amount);
     const baseGasPrice = await web3.publicClient.getGasPrice();
 
     // Pimlico bundler enforces a minimum priority fee of 1_000_000 wei
@@ -80,7 +84,11 @@ export class TacoService {
       ...fee,
       verificationGasLimit: BigInt(500_000),
     });
-    const signature = await this.signUserOpWithTaco(userOp as Record<string, unknown>);
+    const signature = await this.signUserOpWithTaco({
+      ...(userOp as Record<string, unknown>),
+      chainKey: chain,
+      discordContext: params.discordContext,
+    });
     const userOpHash = await web3.bundlerClient.sendUserOperation({
       ...(userOp as any),
       signature: signature.aggregatedSignature as `0x${string}`,
@@ -92,7 +100,7 @@ export class TacoService {
     return {
       smartAccountAddress: (smartAccount as { address: string }).address,
       to: params.to,
-      amountEth: params.amountEth,
+      amount: params.amount,
       userOpHash,
       transactionHash: receipt.transactionHash,
     };
@@ -103,28 +111,37 @@ export class TacoService {
    */
   private async getSmartAccount(
     userId: string,
+    chainKey: SupportedChainKey,
   ): Promise<{ smartAccount: unknown; threshold: number }> {
     await this.initializeTaco();
-    const web3 = Web3Service.getInstance();
+    const web3 = Web3Service.getInstance(chainKey);
+    const chainConfig = CHAIN_CONFIG[chainKey];
+
+    if (!chainConfig.signingCoordinatorChildAddress) {
+      throw new Error(
+        `Missing TACo SigningCoordinator child address for chain "${chainKey}". ` +
+          `Set the appropriate TACO_SIGNING_COORDINATOR_CHILD_ADDRESS_* environment variable.`,
+      );
+    }
 
     // Fetch cohort multisig
     const coordinator = new ethers.Contract(
-      this.TACO_SIGNING_COORDINATOR_CHILD_ADDRESS,
+      chainConfig.signingCoordinatorChildAddress,
       ['function cohortMultisigs(uint32) view returns (address)'],
       web3.signingChainProvider,
     );
-    const cohortMultisigAddress = await coordinator.cohortMultisigs(this.COHORT_ID);
+    const cohortMultisigAddress = await coordinator.cohortMultisigs(chainConfig.cohortId);
 
     // Fetch participants/threshold
     const participants = await SigningCoordinatorAgent.getParticipants(
       web3.signingCoordinatorProvider,
-      this.TACO_DOMAIN,
-      this.COHORT_ID,
+      chainConfig.tacoDomain,
+      chainConfig.cohortId,
     );
     const threshold = await SigningCoordinatorAgent.getThreshold(
       web3.signingCoordinatorProvider,
-      this.TACO_DOMAIN,
-      this.COHORT_ID,
+      chainConfig.tacoDomain,
+      chainConfig.cohortId,
     );
     const signers = participants.map((p) => p.signerAddress as Address);
 
@@ -146,20 +163,42 @@ export class TacoService {
    * Internal helper to sign a prepared UserOperation using TACo.
    */
   private async signUserOpWithTaco(userOp: Record<string, unknown>) {
-    const web3 = Web3Service.getInstance();
+    const { chainKey, discordContext } = userOp as {
+      chainKey?: SupportedChainKey;
+      discordContext?: {
+        timestamp: string;
+        signature: string;
+        payload: string;
+      };
+    };
+    if (!chainKey) {
+      throw new Error('Missing chain key when signing UserOperation with TACo');
+    }
+    if (!discordContext) {
+      throw new Error('Missing Discord context when signing UserOperation with TACo');
+    }
+
+    const web3 = Web3Service.getInstance(chainKey);
+    const chainConfig = CHAIN_CONFIG[chainKey];
 
     const signingContext = await conditions.context.ConditionContext.forSigningCohort(
       web3.signingCoordinatorProvider,
-      this.TACO_DOMAIN,
-      this.COHORT_ID,
-      Web3Service.BASE_SEPOLIA_CHAIN_ID,
+      chainConfig.tacoDomain,
+      chainConfig.cohortId,
+      chainConfig.chainId,
     );
+
+    (signingContext as any).customContextParameters = {
+      ':timestamp': discordContext.timestamp,
+      ':signature': discordContext.signature,
+      ':discordPayload': discordContext.payload,
+    };
 
     return await signUserOp(
       web3.signingCoordinatorProvider,
-      this.TACO_DOMAIN,
-      this.COHORT_ID,
-      Web3Service.BASE_SEPOLIA_CHAIN_ID,
+      chainConfig.tacoDomain,
+      chainConfig.cohortId,
+      chainConfig.chainId,
       userOp as UserOperationToSign,
       this.AA_VERSION,
       signingContext,

@@ -2,13 +2,15 @@ import * as dotenv from 'dotenv';
 import { ethers } from 'ethers';
 import { createPublicClient, http, PublicClient } from 'viem';
 import { createBundlerClient, createPaymasterClient } from 'viem/account-abstraction';
-import { baseSepolia, sepolia } from 'viem/chains';
+import { CHAIN_CONFIG, ChainConfig, SupportedChainKey } from '../config/chains';
 
 dotenv.config();
 
 export class Web3Service {
-  public static readonly BASE_SEPOLIA_CHAIN_ID = 84532;
-  private static instance: Web3Service;
+  private static instances: Partial<Record<SupportedChainKey, Web3Service>> = {};
+
+  public readonly chainKey: SupportedChainKey;
+  public readonly chainId: number;
 
   public signingChainProvider: ethers.providers.JsonRpcProvider;
   public signingCoordinatorProvider: ethers.providers.JsonRpcProvider;
@@ -16,38 +18,56 @@ export class Web3Service {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public bundlerClient: any; // Type as any for now due to complex return type
 
-  private constructor() {
-    const chain = Web3Service.BASE_SEPOLIA_CHAIN_ID === 84532 ? baseSepolia : sepolia;
+  private constructor(chainKey: SupportedChainKey, config: ChainConfig) {
+    this.chainKey = chainKey;
+    this.chainId = config.chainId;
+
+    const { signingChainRpcUrl, signingCoordinatorRpcUrl, bundlerUrl, viemChain } = config;
+
+    if (!signingChainRpcUrl) {
+      throw new Error(`Missing signing chain RPC URL for chain "${chainKey}"`);
+    }
+    if (!signingCoordinatorRpcUrl) {
+      throw new Error(`Missing signing coordinator RPC URL for chain "${chainKey}"`);
+    }
+    if (!bundlerUrl) {
+      throw new Error(`Missing bundler URL for chain "${chainKey}"`);
+    }
 
     // Ethers providers
-    this.signingChainProvider = new ethers.providers.JsonRpcProvider(
-      process.env.SIGNING_CHAIN_RPC_URL!,
-    );
+    this.signingChainProvider = new ethers.providers.JsonRpcProvider(signingChainRpcUrl);
     this.signingCoordinatorProvider = new ethers.providers.JsonRpcProvider(
-      process.env.ETH_RPC_URL!,
+      signingCoordinatorRpcUrl,
     );
 
     // Viem clients
     this.publicClient = createPublicClient({
-      chain: chain,
-      transport: http(process.env.SIGNING_CHAIN_RPC_URL),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      chain: viemChain as any,
+      transport: http(signingChainRpcUrl),
     }) as unknown as PublicClient;
 
     const paymasterClient = createPaymasterClient({
-      transport: http(process.env.BUNDLER_URL),
+      transport: http(bundlerUrl),
     });
 
     this.bundlerClient = createBundlerClient({
-      transport: http(process.env.BUNDLER_URL),
+      transport: http(bundlerUrl),
       paymaster: paymasterClient,
-      chain: chain,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      chain: viemChain as any,
     });
   }
 
-  public static getInstance(): Web3Service {
-    if (!Web3Service.instance) {
-      Web3Service.instance = new Web3Service();
+  public static getInstance(chainKey: SupportedChainKey): Web3Service {
+    if (!this.instances[chainKey]) {
+      const config = CHAIN_CONFIG[chainKey];
+      if (!config) {
+        throw new Error(`Unsupported chain key "${chainKey}"`);
+      }
+      this.instances[chainKey] = new Web3Service(chainKey, config);
     }
-    return Web3Service.instance;
+
+    return this.instances[chainKey] as Web3Service;
   }
 }

@@ -1,10 +1,13 @@
 import { Request, Response } from 'express';
 import { TacoService } from '../services/taco.service';
+import { getChainKeyFromRequest } from '../utils/chain';
 
 export class ExecuteController {
   static async execute(req: Request, res: Response) {
     try {
-      const { userId, to, amountEth } = req.body;
+      const { userId, to, amountEth, discordTimestamp, discordSignature, discordPayload } =
+        req.body;
+      console.log('req.body', req.body);
       if (!userId) {
         res.status(400).json({ error: 'userId is required' });
         return;
@@ -20,12 +23,27 @@ export class ExecuteController {
         return;
       }
 
-      const tacoService = TacoService.getInstance();
+      if (!discordTimestamp || !discordSignature || !discordPayload) {
+        res.status(400).json({
+          error:
+            'discordTimestamp, discordSignature, and discordPayload are required for TACo Discord-verified execution',
+        });
+        return;
+      }
 
+      const tacoService = TacoService.getInstance();
+      const chainKey = getChainKeyFromRequest(req);
       const result = await tacoService.transferFromSmartAccount({
         userId: String(userId),
         to,
-        amountEth,
+        amount: amountEth,
+        chain: chainKey,
+        discordContext: {
+          timestamp: String(discordTimestamp),
+          signature: String(discordSignature),
+          payload:
+            typeof discordPayload === 'string' ? discordPayload : JSON.stringify(discordPayload),
+        },
       });
 
       res.json({
@@ -33,7 +51,7 @@ export class ExecuteController {
         message: 'Execution started',
         senderSmartAccount: result.smartAccountAddress,
         receiver: result.to,
-        amountEth: result.amountEth,
+        amountEth: result.amount,
         userOpHash: result.userOpHash,
         transactionHash: result.transactionHash,
       });
