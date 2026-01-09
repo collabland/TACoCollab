@@ -39,7 +39,7 @@ export const CHAIN_CONFIG: Record<SupportedChainKey, ChainConfig> = {
     chainId: 84532,
     viemChain: baseSepolia,
     tacoDomain: domains.DEVNET,
-    cohortId: 1,
+    cohortId: 2,
     signingCoordinatorChildAddress: baseSigningCoordinatorChildAddress,
     signingChainRpcUrl: process.env.SIGNING_CHAIN_RPC_URL,
     signingCoordinatorRpcUrl: process.env.ETH_RPC_URL,

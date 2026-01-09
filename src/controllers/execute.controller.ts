@@ -38,10 +38,9 @@ export class ExecuteController {
         amount: amountEth,
         chain: chainKey,
         discordContext: {
-          timestamp: String(discordTimestamp),
-          signature: String(discordSignature),
-          payload:
-            typeof discordPayload === 'string' ? discordPayload : JSON.stringify(discordPayload),
+          timestamp: discordTimestamp,
+          signature: discordSignature,
+          payload: discordPayload,
         },
       });
 
