@@ -226,7 +226,7 @@ export class TacoService {
     }
 
     const collablandId = ethers.utils.keccak256(
-      ethers.utils.toUtf8Bytes(`${discordUserId}|Discord|Collabland`),
+      ethers.utils.toUtf8Bytes(`${discordUserId}|Discord|Collab.Land`),
     ) as `0x${string}`;
 
     // Fetch cohort multisig
