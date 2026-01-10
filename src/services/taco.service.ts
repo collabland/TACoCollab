@@ -4,7 +4,7 @@ import { conditions, initialize, signUserOp, UserOperationToSign } from '@nucyph
 import { ethers } from 'ethers';
 import { Address } from 'viem';
 import { CHAIN_CONFIG, SupportedChainKey } from '../config/chains';
-import { createViemTacoAccount } from '../utils/taco-account';
+import { createViemTacoAccount, getCollabLandId } from '../utils/taco-account';
 import { Web3Service } from './web3.service';
 
 export class TacoService {
@@ -194,12 +194,16 @@ export class TacoService {
 
     const tacoAccount = createViemTacoAccount(cohortMultisigAddress as Address);
 
+    // Use the shared Collab.Land salt helper so that every TACo smart account
+    // for this user (whether explicitly created or used as a sender during
+    // execution) is derived from the exact same deploySalt.
+    const deploySalt = getCollabLandId(userId);
     const smartAccount = await toMetaMaskSmartAccount({
       // @ts-expect-error - Type incompatibility between viem versions
       client: web3.publicClient,
       implementation: Implementation.MultiSig,
       deployParams: [signers, BigInt(threshold)],
-      deploySalt: ethers.utils.id(userId) as `0x${string}`,
+      deploySalt,
       signatory: [{ account: tacoAccount }],
     });
 
@@ -207,8 +211,11 @@ export class TacoService {
   }
 
   /**
-   * Derive a TACo AA address for a Discord user, mirroring the demo script:
-   * keccak256("{DISCORD_USER_ID}|Discord|Collabland") as deploy salt.
+   * Derive a TACo AA address for a Discord user.
+   *
+   * IMPORTANT: This uses the same Collab.Land salt helper as sender account
+   * creation so that the deploySalt is consistent everywhere:
+   * keccak256("{DISCORD_USER_ID}|Discord|Collab.Land")
    */
   private async deriveDiscordUserAA(
     discordUserId: string,
@@ -225,9 +232,7 @@ export class TacoService {
       );
     }
 
-    const collablandId = ethers.utils.keccak256(
-      ethers.utils.toUtf8Bytes(`${discordUserId}|Discord|Collab.Land`),
-    ) as `0x${string}`;
+    const collablandId = getCollabLandId(discordUserId);
 
     // Fetch cohort multisig
     const coordinator = new ethers.Contract(
