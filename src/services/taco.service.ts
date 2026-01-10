@@ -34,7 +34,7 @@ export class TacoService {
   }
 
   public async createSmartAccount(userId: string, chainKey: SupportedChainKey) {
-    const { smartAccount, threshold } = await this.getDiscordUserSmartAccount(userId, chainKey);
+    const { smartAccount, threshold } = await this.getSmartAccount(userId, chainKey);
 
     return {
       address: (smartAccount as { address: string }).address,
@@ -66,7 +66,7 @@ export class TacoService {
 
     const { chain, userId, to, amount, discordContext } = params;
     const web3 = Web3Service.getInstance(chain);
-    const { smartAccount } = await this.getDiscordUserSmartAccount(userId, chain);
+    const { smartAccount } = await this.getSmartAccount(userId, chain);
 
     // Default to the explicit amount & recipient provided to the API.
     let transferValue = ethers.utils.parseEther(amount);
@@ -99,9 +99,9 @@ export class TacoService {
       }
 
       if (receiverOpt) {
-        const recipientDiscordId = String(receiverOpt);
-        const { smartAccount: recipientSmartAccount } = await this.getDiscordUserSmartAccount(
-          recipientDiscordId,
+        const recipientUserId = String(receiverOpt);
+        const { smartAccount: recipientSmartAccount } = await this.getSmartAccount(
+          recipientUserId,
           chain,
         );
         callTarget = (recipientSmartAccount as { address: Address }).address;
@@ -159,7 +159,7 @@ export class TacoService {
 
   /**
    * Internal helper to derive (or counterfactually create) the TACo smart account
-   * for a given Discord user on a specific chain.
+   * for a given user identifier on a specific chain.
    *
    * This is the single place where we:
    * - Fetch cohort multisig
@@ -170,8 +170,8 @@ export class TacoService {
    * All sender/receiver account derivations MUST go through this helper to avoid
    * any drift in deploySalt or deployment parameters.
    */
-  private async getDiscordUserSmartAccount(
-    discordUserId: string,
+  private async getSmartAccount(
+    userId: string,
     chainKey: SupportedChainKey,
   ): Promise<{ smartAccount: unknown; threshold: number }> {
     await this.initializeTaco();
@@ -211,7 +211,7 @@ export class TacoService {
     // Use the shared Collab.Land salt helper so that every TACo smart account
     // for this user (whether explicitly created or used as a sender/receiver during
     // execution) is derived from the exact same deploySalt.
-    const deploySalt = getCollabLandId(discordUserId);
+    const deploySalt = getCollabLandId(userId);
 
     const smartAccount = await toMetaMaskSmartAccount({
       // @ts-expect-error - Type incompatibility between viem versions
