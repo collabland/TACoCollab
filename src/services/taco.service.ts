@@ -34,7 +34,7 @@ export class TacoService {
   }
 
   public async createSmartAccount(userId: string, chainKey: SupportedChainKey) {
-    const { smartAccount, threshold } = await this.getSmartAccount(userId, chainKey);
+    const { smartAccount, threshold } = await this.getDiscordUserSmartAccount(userId, chainKey);
 
     return {
       address: (smartAccount as { address: string }).address,
@@ -66,7 +66,7 @@ export class TacoService {
 
     const { chain, userId, to, amount, discordContext } = params;
     const web3 = Web3Service.getInstance(chain);
-    const { smartAccount } = await this.getSmartAccount(userId, chain);
+    const { smartAccount } = await this.getDiscordUserSmartAccount(userId, chain);
 
     // Default to the explicit amount & recipient provided to the API.
     let transferValue = ethers.utils.parseEther(amount);
@@ -100,7 +100,11 @@ export class TacoService {
 
       if (receiverOpt) {
         const recipientDiscordId = String(receiverOpt);
-        callTarget = await this.deriveDiscordUserAA(recipientDiscordId, chain);
+        const { smartAccount: recipientSmartAccount } = await this.getDiscordUserSmartAccount(
+          recipientDiscordId,
+          chain,
+        );
+        callTarget = (recipientSmartAccount as { address: Address }).address;
       }
     } catch (err) {
       console.warn(
@@ -154,10 +158,20 @@ export class TacoService {
   }
 
   /**
-   * Internal helper to derive (or counterfactually create) the TACo smart account.
+   * Internal helper to derive (or counterfactually create) the TACo smart account
+   * for a given Discord user on a specific chain.
+   *
+   * This is the single place where we:
+   * - Fetch cohort multisig
+   * - Fetch participants / threshold
+   * - Build the TACo viem account
+   * - Compute the deploySalt via getCollabLandId("{DISCORD_USER_ID}|Discord|Collab.Land")
+   *
+   * All sender/receiver account derivations MUST go through this helper to avoid
+   * any drift in deploySalt or deployment parameters.
    */
-  private async getSmartAccount(
-    userId: string,
+  private async getDiscordUserSmartAccount(
+    discordUserId: string,
     chainKey: SupportedChainKey,
   ): Promise<{ smartAccount: unknown; threshold: number }> {
     await this.initializeTaco();
@@ -195,9 +209,10 @@ export class TacoService {
     const tacoAccount = createViemTacoAccount(cohortMultisigAddress as Address);
 
     // Use the shared Collab.Land salt helper so that every TACo smart account
-    // for this user (whether explicitly created or used as a sender during
+    // for this user (whether explicitly created or used as a sender/receiver during
     // execution) is derived from the exact same deploySalt.
-    const deploySalt = getCollabLandId(userId);
+    const deploySalt = getCollabLandId(discordUserId);
+
     const smartAccount = await toMetaMaskSmartAccount({
       // @ts-expect-error - Type incompatibility between viem versions
       client: web3.publicClient,
@@ -208,65 +223,6 @@ export class TacoService {
     });
 
     return { smartAccount, threshold };
-  }
-
-  /**
-   * Derive a TACo AA address for a Discord user.
-   *
-   * IMPORTANT: This uses the same Collab.Land salt helper as sender account
-   * creation so that the deploySalt is consistent everywhere:
-   * keccak256("{DISCORD_USER_ID}|Discord|Collab.Land")
-   */
-  private async deriveDiscordUserAA(
-    discordUserId: string,
-    chainKey: SupportedChainKey,
-  ): Promise<Address> {
-    await this.initializeTaco();
-    const web3 = Web3Service.getInstance(chainKey);
-    const chainConfig = CHAIN_CONFIG[chainKey];
-
-    if (!chainConfig.signingCoordinatorChildAddress) {
-      throw new Error(
-        `Missing TACo SigningCoordinator child address for chain "${chainKey}". ` +
-          `Set the appropriate TACO_SIGNING_COORDINATOR_CHILD_ADDRESS_* environment variable.`,
-      );
-    }
-
-    const collablandId = getCollabLandId(discordUserId);
-
-    // Fetch cohort multisig
-    const coordinator = new ethers.Contract(
-      chainConfig.signingCoordinatorChildAddress,
-      ['function cohortMultisigs(uint32) view returns (address)'],
-      web3.signingChainProvider,
-    );
-    const cohortMultisigAddress = await coordinator.cohortMultisigs(chainConfig.cohortId);
-
-    // Fetch participants/threshold
-    const participants = await SigningCoordinatorAgent.getParticipants(
-      web3.signingCoordinatorProvider,
-      chainConfig.tacoDomain,
-      chainConfig.cohortId,
-    );
-    const threshold = await SigningCoordinatorAgent.getThreshold(
-      web3.signingCoordinatorProvider,
-      chainConfig.tacoDomain,
-      chainConfig.cohortId,
-    );
-    const signers = participants.map((p) => p.signerAddress as Address);
-
-    const tacoAccount = createViemTacoAccount(cohortMultisigAddress as Address);
-
-    const smartAccount = await toMetaMaskSmartAccount({
-      // @ts-expect-error - Type incompatibility between viem versions
-      client: web3.publicClient,
-      implementation: Implementation.MultiSig,
-      deployParams: [signers, BigInt(threshold)],
-      deploySalt: collablandId,
-      signatory: [{ account: tacoAccount }],
-    });
-
-    return (smartAccount as { address: Address }).address;
   }
 
   /**
