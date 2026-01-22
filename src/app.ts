@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { accountRouter } from './routes/account.routes';
 import { executeRouter } from './routes/execute.routes';
+import { AccountController } from './controllers/account.controller';
 
 const app = express();
 

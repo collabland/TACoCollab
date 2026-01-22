@@ -1,12 +1,22 @@
 import { Request, Response } from 'express';
 import { TacoService } from '../services/taco.service';
 import { getChainKeyFromRequest } from '../utils/chain';
+import { getRawErrorString, getUserFriendlyError } from '../utils/errors';
+import { TOKEN_SYMBOL } from '../config/tokens';
 
 export class ExecuteController {
   static async execute(req: Request, res: Response) {
     try {
-      const { userId, to, amountEth, discordTimestamp, discordSignature, discordPayload } =
-        req.body;
+      const {
+        userId,
+        to,
+        amountEth,
+        amount,
+        discordTimestamp,
+        discordSignature,
+        discordPayload,
+        tokenSymbol,
+      } = req.body;
       if (!userId) {
         res.status(400).json({ error: 'userId is required' });
         return;
@@ -17,8 +27,10 @@ export class ExecuteController {
         return;
       }
 
-      if (!amountEth) {
-        res.status(400).json({ error: 'amountEth is required' });
+      const tokenToUse = String(tokenSymbol ?? TOKEN_SYMBOL.ETH);
+      const amountToUse = String(amount ?? amountEth ?? '');
+      if (!amountToUse) {
+        res.status(400).json({ error: 'amount (or amountEth) is required' });
         return;
       }
 
@@ -35,7 +47,8 @@ export class ExecuteController {
       const result = await tacoService.transferFromSmartAccount({
         userId: String(userId),
         to,
-        amount: amountEth,
+        amount: amountToUse,
+        tokenSymbol: tokenToUse,
         chain: chainKey,
         discordContext: {
           timestamp: discordTimestamp,
@@ -49,13 +62,20 @@ export class ExecuteController {
         message: 'Execution started',
         senderSmartAccount: result.smartAccountAddress,
         receiver: result.to,
-        amountEth: result.amount,
+        amount: result.amount,
+        tokenSymbol: result.tokenSymbol,
         userOpHash: result.userOpHash,
         transactionHash: result.transactionHash,
       });
     } catch (error) {
       console.error(error);
-      res.status(500).json({ error: 'Failed to start execution' });
+      const tokenToUse = String(
+        (req.body as any)?.tokenSymbol ?? (req.body as any)?.token ?? TOKEN_SYMBOL.ETH,
+      );
+      res.status(500).json({
+        error: getUserFriendlyError(error, tokenToUse),
+        rawError: getRawErrorString(error, 500),
+      });
     }
   }
 }
