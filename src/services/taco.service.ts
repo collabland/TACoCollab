@@ -2,10 +2,29 @@ import { Implementation, toMetaMaskSmartAccount } from '@metamask/delegation-too
 import { SigningCoordinatorAgent } from '@nucypher/shared';
 import { conditions, initialize, signUserOp, UserOperationToSign } from '@nucypher/taco';
 import { ethers } from 'ethers';
-import { Address } from 'viem';
+import { Address, encodeFunctionData } from 'viem';
 import { CHAIN_CONFIG, SupportedChainKey } from '../config/chains';
+import {
+  getTokenAddress,
+  getTokenDecimals,
+  normalizeTokenSymbol,
+  SupportedTokenSymbol,
+  TOKEN_SYMBOL,
+} from '../config/tokens';
 import { createViemTacoAccount, getCollabLandId } from '../utils/taco-account';
 import { Web3Service } from './web3.service';
+
+const ERC20_TRANSFER_ABI = [
+  {
+    name: 'transfer',
+    type: 'function',
+    inputs: [
+      { name: 'to', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [{ type: 'bool' }],
+  },
+] as const;
 
 export class TacoService {
   private static instance: TacoService;
@@ -49,6 +68,7 @@ export class TacoService {
     userId: string;
     to: Address;
     amount: string;
+    tokenSymbol?: SupportedTokenSymbol | string;
     chain: SupportedChainKey;
     discordContext: {
       timestamp: string;
@@ -59,6 +79,7 @@ export class TacoService {
     smartAccountAddress: string;
     to: string;
     amount: string;
+    tokenSymbol: SupportedTokenSymbol;
     userOpHash: string;
     transactionHash: string;
   }> {
@@ -68,50 +89,58 @@ export class TacoService {
     const web3 = Web3Service.getInstance(chain);
     const { smartAccount } = await this.getSmartAccount(userId, chain);
 
-    // Default to the explicit amount & recipient provided to the API.
-    let transferValue = ethers.utils.parseEther(amount);
+    // 1) Start with explicit API params
+    let tokenSymbol: SupportedTokenSymbol = normalizeTokenSymbol(params.tokenSymbol);
+    let transferAmountStr = amount;
     let callTarget: Address = to;
 
-    const baseGasPrice = await web3.publicClient.getGasPrice();
-
-    // Try to align call target & amount with Discord payload, like the demo script.
-    // If parsing fails, we gracefully fall back to the raw values from params.
-    try {
-      const parsed = JSON.parse(discordContext.payload) as {
-        member?: { user?: { id?: string } };
-        data?: {
-          options?: Array<{
-            name?: string;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            options?: Array<{ name?: string; value?: any }>;
-          }>;
-        };
-      };
-
-      const executeCmd = parsed?.data?.options?.find((o) => o?.name === 'execute');
-      const opts = executeCmd?.options ?? [];
-
-      const amountOpt = opts.find((o) => o?.name === 'amount')?.value;
-      const receiverOpt = opts.find((o) => o?.name === 'receiver')?.value;
-
-      if (amountOpt !== undefined) {
-        transferValue = ethers.utils.parseEther(String(amountOpt));
-      }
-
-      if (receiverOpt) {
-        const recipientUserId = String(receiverOpt);
-        const { smartAccount: recipientSmartAccount } = await this.getSmartAccount(
-          recipientUserId,
-          chain,
-        );
-        callTarget = (recipientSmartAccount as { address: Address }).address;
-      }
-    } catch (err) {
-      console.warn(
-        'Failed to derive AA recipient from Discord payload, using raw `to` address.',
-        err,
+    // 2) Best-effort override amount/token/recipient from Discord payload (matches discord-taco-web behavior)
+    const discordOverrides = this.tryParseDiscordExecuteOverrides(discordContext.payload);
+    if (discordOverrides.amountStr) transferAmountStr = discordOverrides.amountStr;
+    if (discordOverrides.tokenSymbol) tokenSymbol = discordOverrides.tokenSymbol;
+    if (discordOverrides.receiverUserId) {
+      const { smartAccount: recipientSmartAccount } = await this.getSmartAccount(
+        discordOverrides.receiverUserId,
+        chain,
       );
+      callTarget = (recipientSmartAccount as { address: Address }).address;
     }
+
+    // 3) Resolve token metadata & amount (decimals/address) for the signing chain
+    const chainId = CHAIN_CONFIG[chain].chainId;
+    const { tokenAddress, tokenDecimals } = await this.getTokenMetaForChain(
+      tokenSymbol,
+      chainId,
+      web3.signingChainProvider,
+    );
+    const transferValue =
+      tokenSymbol === TOKEN_SYMBOL.ETH
+        ? ethers.utils.parseEther(transferAmountStr)
+        : ethers.utils.parseUnits(transferAmountStr, tokenDecimals);
+
+    // 4) Preflight balance checks:
+    // - ERC20: ensure token balance exists
+    // - ETH: ensure smart account has enough ETH to cover the transfer value
+    if (tokenSymbol === TOKEN_SYMBOL.ETH) {
+      await this.assertEthBalanceSufficient({
+        provider: web3.signingChainProvider,
+        smartAccountAddress: (smartAccount as { address: string }).address,
+        requiredAmount: transferValue,
+        requiredAmountDisplay: transferAmountStr,
+      });
+    } else {
+      await this.assertErc20BalanceSufficient({
+        provider: web3.signingChainProvider,
+        tokenAddress: tokenAddress as Address,
+        tokenDecimals,
+        tokenSymbol,
+        smartAccountAddress: (smartAccount as { address: string }).address,
+        requiredAmount: transferValue,
+        requiredAmountDisplay: transferAmountStr,
+      });
+    }
+
+    const baseGasPrice = await web3.publicClient.getGasPrice();
 
     // Pimlico bundler enforces a minimum priority fee of 1_000_000 wei
     // (see error: "maxPriorityFeePerGas must be at least 1000000").
@@ -124,14 +153,16 @@ export class TacoService {
         suggestedPriorityFee < MIN_PRIORITY_FEE ? MIN_PRIORITY_FEE : suggestedPriorityFee,
     };
 
+    const calls = this.buildUserOpCalls({
+      tokenSymbol,
+      tokenAddress,
+      recipient: callTarget,
+      amount: transferValue,
+    });
+
     const userOp = await web3.bundlerClient.prepareUserOperation({
       account: smartAccount,
-      calls: [
-        {
-          to: callTarget,
-          value: BigInt(transferValue.toString()),
-        },
-      ],
+      calls,
       ...fee,
       verificationGasLimit: BigInt(500_000),
     });
@@ -151,10 +182,145 @@ export class TacoService {
     return {
       smartAccountAddress: (smartAccount as { address: string }).address,
       to,
-      amount,
+      amount: transferAmountStr,
+      tokenSymbol,
       userOpHash,
       transactionHash: receipt.transactionHash,
     };
+  }
+
+  private tryParseDiscordExecuteOverrides(payload: string): {
+    amountStr?: string;
+    tokenSymbol?: SupportedTokenSymbol;
+    receiverUserId?: string;
+  } {
+    try {
+      const parsed = JSON.parse(payload) as {
+        data?: {
+          options?: Array<{
+            name?: string;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            options?: Array<{ name?: string; value?: any }>;
+          }>;
+        };
+      };
+
+      // NOTE: must compare both sides; `'send'` alone is always truthy.
+      const executeCmd = parsed?.data?.options?.find(
+        (o) => o?.name === 'execute' || o?.name === 'send',
+      );
+      const opts = executeCmd?.options ?? [];
+
+      const amountOpt = opts.find((o) => o?.name === 'amount')?.value;
+      const receiverOpt = opts.find((o) => o?.name === 'receiver')?.value;
+      const tokenOpt = opts.find((o) => o?.name === 'token')?.value;
+
+      return {
+        amountStr: amountOpt !== undefined ? String(amountOpt) : undefined,
+        tokenSymbol: tokenOpt !== undefined ? normalizeTokenSymbol(tokenOpt) : undefined,
+        receiverUserId: receiverOpt ? String(receiverOpt) : undefined,
+      };
+    } catch (err) {
+      console.warn('Failed to parse Discord payload overrides; using API params.', err);
+      return {};
+    }
+  }
+
+  private async assertEthBalanceSufficient(params: {
+    provider: ethers.providers.JsonRpcProvider;
+    smartAccountAddress: string;
+    requiredAmount: ethers.BigNumber;
+    requiredAmountDisplay: string;
+  }): Promise<void> {
+    const { provider, smartAccountAddress, requiredAmount, requiredAmountDisplay } = params;
+    const currentBalance = await provider.getBalance(smartAccountAddress);
+    if (currentBalance.lt(requiredAmount)) {
+      throw new Error(
+        `Insufficient ETH balance in smart account ${smartAccountAddress}. ` +
+          `Have ${ethers.utils.formatEther(currentBalance)} ETH, ` +
+          `need ${requiredAmountDisplay} ETH for the transfer value (gas may be additional).`,
+      );
+    }
+  }
+
+  private async getTokenMetaForChain(
+    tokenSymbol: SupportedTokenSymbol,
+    chainId: number,
+    provider: ethers.providers.JsonRpcProvider,
+  ): Promise<{ tokenAddress: Address | null; tokenDecimals: number }> {
+    if (tokenSymbol === TOKEN_SYMBOL.ETH) return { tokenAddress: null, tokenDecimals: 18 };
+
+    const tokenAddress = await getTokenAddress(tokenSymbol, chainId);
+    const tokenDecimals = await getTokenDecimals(tokenSymbol, tokenAddress, provider);
+    return { tokenAddress, tokenDecimals };
+  }
+
+  private async assertErc20BalanceSufficient(params: {
+    provider: ethers.providers.JsonRpcProvider;
+    tokenAddress: Address;
+    tokenDecimals: number;
+    tokenSymbol: SupportedTokenSymbol;
+    smartAccountAddress: string;
+    requiredAmount: ethers.BigNumber;
+    requiredAmountDisplay: string;
+  }): Promise<void> {
+    const {
+      provider,
+      tokenAddress,
+      tokenDecimals,
+      tokenSymbol,
+      smartAccountAddress,
+      requiredAmount,
+      requiredAmountDisplay,
+    } = params;
+
+    const tokenContract = new ethers.Contract(
+      tokenAddress as string,
+      ['function balanceOf(address) view returns (uint256)'],
+      provider,
+    );
+    const currentBalance = (await tokenContract.balanceOf(smartAccountAddress)) as ethers.BigNumber;
+    if (currentBalance.lt(requiredAmount)) {
+      throw new Error(
+        `Insufficient ${tokenSymbol} balance in smart account ${smartAccountAddress}. ` +
+          `Have ${ethers.utils.formatUnits(currentBalance, tokenDecimals)} ${tokenSymbol}, ` +
+          `need ${requiredAmountDisplay} ${tokenSymbol}.`,
+      );
+    }
+  }
+
+  private buildUserOpCalls(params: {
+    tokenSymbol: SupportedTokenSymbol;
+    tokenAddress: Address | null;
+    recipient: Address;
+    amount: ethers.BigNumber;
+  }): Array<{ to: Address; value: bigint; data?: `0x${string}` }> {
+    const { tokenSymbol, tokenAddress, recipient, amount } = params;
+
+    if (tokenSymbol === TOKEN_SYMBOL.ETH) {
+      return [
+        {
+          to: recipient,
+          value: BigInt(amount.toString()),
+        },
+      ];
+    }
+
+    if (!tokenAddress) {
+      throw new Error(`Missing token address for ERC20 transfer (${tokenSymbol})`);
+    }
+
+    return [
+      {
+        to: tokenAddress,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: ERC20_TRANSFER_ABI,
+          functionName: 'transfer',
+          args: [recipient, BigInt(amount.toString())],
+        }),
+      },
+    ];
   }
 
   /**
