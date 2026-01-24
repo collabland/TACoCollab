@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { TacoService } from '../services/taco.service';
 import { getChainKeyFromRequest } from '../utils/chain';
+import { getTxExplorerBaseUrl } from '../utils/explorer';
 import { getRawErrorString, getUserFriendlyError } from '../utils/errors';
 import { TOKEN_SYMBOL } from '../config/tokens';
 
@@ -57,15 +58,22 @@ export class ExecuteController {
         },
       });
 
+      const explorerBase = getTxExplorerBaseUrl(chainKey);
+      const transactionExplorerUrl = explorerBase
+        ? `${explorerBase}${result.transactionHash}`
+        : null;
+
       res.json({
         status: 'submitted',
         message: 'Execution started',
+        chain: chainKey,
         senderSmartAccount: result.smartAccountAddress,
         receiver: result.to,
         amount: result.amount,
         tokenSymbol: result.tokenSymbol,
         userOpHash: result.userOpHash,
         transactionHash: result.transactionHash,
+        transactionExplorerUrl,
       });
     } catch (error) {
       console.error(error);

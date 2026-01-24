@@ -3,6 +3,7 @@ import { Request, Response } from 'express';
 import { TacoService } from '../services/taco.service';
 import { Web3Service } from '../services/web3.service';
 import { getChainKeyFromRequest } from '../utils/chain';
+import { getAddressExplorerBaseUrl } from '../utils/explorer';
 import { CHAIN_CONFIG } from '../config/chains';
 import { getTokenAddress, getTokenDecimals, TOKEN_SYMBOL } from '../config/tokens';
 
@@ -45,8 +46,24 @@ export class AccountController {
         web3.signingChainProvider,
       );
       const usdcBalance = await usdcContract.balanceOf(address);
+
+      const explorerBase = getAddressExplorerBaseUrl(chainKey);
+      const addressExplorerUrl = explorerBase ? `${explorerBase}${address}` : null;
+      const usdcExplorerUrl = explorerBase ? `${explorerBase}${usdcAddress}` : null;
+
       res.json({
         address,
+        chain: chainKey,
+        chainLabel: CHAIN_CONFIG[chainKey].label,
+        chainId,
+        addressExplorerUrl,
+        tokens: {
+          USDC: {
+            address: usdcAddress,
+            explorerUrl: usdcExplorerUrl,
+          },
+        },
+        usdcAddress,
         ETH: ethers.utils.formatEther(ethBalance),
         USDC: ethers.utils.formatUnits(usdcBalance, usdcDecimals),
       });
