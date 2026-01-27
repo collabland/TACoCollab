@@ -1,11 +1,11 @@
-import * as dotenv from 'dotenv';
 import { domains } from '@nucypher/taco';
-import { base, baseSepolia, sepolia } from 'viem/chains';
+import * as dotenv from 'dotenv';
+import { base, baseSepolia } from 'viem/chains';
 
 // Ensure .env variables are loaded before we read from process.env for chain config.
 dotenv.config();
 
-export type SupportedChainKey = 'base-sepolia' | 'base-mainnet' | 'eth-sepolia';
+export type SupportedChainKey = 'base-sepolia' | 'base-mainnet';
 
 export const DEFAULT_CHAIN_KEY: SupportedChainKey = 'base-sepolia';
 
@@ -57,27 +57,15 @@ export const CHAIN_CONFIG: Record<SupportedChainKey, ChainConfig> = {
     label: 'Base Mainnet',
     chainId: 8453,
     viemChain: base,
-    tacoDomain: domains.DEVNET,
-    cohortId: 2,
+    tacoDomain: domains.Mainnet,
+    cohortId: 3,
     signingCoordinatorChildAddress: baseMainnetSigningCoordinatorChildAddress,
     signingChainRpcUrl: process.env.SIGNING_CHAIN_RPC_URL,
     signingCoordinatorRpcUrl: process.env.ETH_RPC_URL,
-    bundlerUrl: process.env.BUNDLER_URL_BASE_MAINNET,
-  },
-  'eth-sepolia': {
-    key: 'eth-sepolia',
-    label: 'Ethereum Sepolia',
-    chainId: 11155111,
-    viemChain: sepolia,
-    tacoDomain: domains.DEVNET,
-    cohortId: 1,
-    signingCoordinatorChildAddress: ethSepoliaSigningCoordinatorChildAddress,
-    signingChainRpcUrl: process.env.ETH_RPC_URL,
-    signingCoordinatorRpcUrl: process.env.ETH_RPC_URL,
-    bundlerUrl: process.env.BUNDLER_URL_ETH,
+    bundlerUrl: process.env.BUNDLER_URL, // TODO: create it dynamically
   },
 };
 
 export function isSupportedChainKey(value: string): value is SupportedChainKey {
-  return value === 'base-sepolia' || value === 'base-mainnet' || value === 'eth-sepolia';
+  return value === 'base-sepolia' || value === 'base-mainnet';
 }
