@@ -160,11 +160,14 @@ export class TacoService {
       amount: transferValue,
     });
 
+    // Use higher gas limit for mainnet deployments (smart account creation requires more gas)
+    const verificationGasLimit = chain === 'base-mainnet' ? BigInt(1_500_000) : BigInt(500_000);
+
     const userOp = await web3.bundlerClient.prepareUserOperation({
       account: smartAccount,
       calls,
       ...fee,
-      verificationGasLimit: BigInt(500_000),
+      verificationGasLimit,
     });
     const signature = await this.signUserOpWithTaco({
       ...(userOp as Record<string, unknown>),
