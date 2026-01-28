@@ -41,7 +41,7 @@ export const CHAIN_CONFIG: Record<SupportedChainKey, ChainConfig> = {
     viemChain: base,
     tacoDomain: domains.Mainnet,
     cohortId: 3,
-    signingCoordinatorChildAddress: '0xcc537b292d142dABe2424277596d8FFCC3e6A12D',
+    signingCoordinatorChildAddress: '0xdecd7F2056fb1653300fc2Ba1CbFe6203E731Ad3',
     signingChainRpcUrl: 'https://mainnet.base.org',
     signingCoordinatorRpcUrl: getInfuraRpcUrl('mainnet'),
     bundlerUrl: getPimlicoBundlerUrl(8453),
