@@ -39,7 +39,7 @@ export const CHAIN_CONFIG: Record<SupportedChainKey, ChainConfig> = {
     label: 'Base Mainnet',
     chainId: 8453,
     viemChain: base,
-    tacoDomain: domains.Mainnet,
+    tacoDomain: domains.mainnet,
     cohortId: 3,
     signingCoordinatorChildAddress: '0xdecd7F2056fb1653300fc2Ba1CbFe6203E731Ad3',
     signingChainRpcUrl: 'https://mainnet.base.org',
