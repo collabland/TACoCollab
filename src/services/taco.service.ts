@@ -144,7 +144,8 @@ export class TacoService {
 
     // Pimlico bundler enforces minimum gas prices
     // Use higher multipliers to ensure we meet Pimlico's requirements, especially on mainnet
-    const MIN_PRIORITY_FEE = 1_000_000n;
+    // Pimlico requires maxPriorityFeePerGas to be at least 1,200,000 wei on Base Mainnet
+    const MIN_PRIORITY_FEE = chain === 'base-mainnet' ? 1_200_000n : 1_000_000n;
     const suggestedPriorityFee = baseGasPrice / 10n;
 
     // Higher multiplier for mainnet to ensure we meet Pimlico's minimum gas price requirements
