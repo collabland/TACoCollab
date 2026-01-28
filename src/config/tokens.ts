@@ -1,9 +1,7 @@
-import * as dotenv from 'dotenv';
 import { Address } from 'viem';
 import { ethers } from 'ethers';
 
-// Ensure .env variables are loaded before we read from process.env
-dotenv.config();
+import { optionalEnv } from './env';
 
 export const TOKEN_SYMBOL = {
   ETH: 'ETH',
@@ -13,19 +11,12 @@ export const TOKEN_SYMBOL = {
 
 export type SupportedTokenSymbol = (typeof TOKEN_SYMBOL)[keyof typeof TOKEN_SYMBOL];
 
-// Optional env overrides (useful when token list APIs disagree with your cohort's condition allowlist).
-export const USDC_BASE_SEPOLIA_ADDRESS = (process.env.USDC_BASE_SEPOLIA_ADDRESS ||
-  '0x036CbD53842c5426634e7929541eC2318f3dCF7e') as Address; // Base Sepolia USDC
-export const USDC_BASE_MAINNET_ADDRESS = (process.env.USDC_BASE_MAINNET_ADDRESS ||
-  '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913') as Address; // Base Mainnet USDC
-
-export const TOKEN_LIST_API_URL =
-  process.env.TOKEN_LIST_API_URL || 'https://tokens.coingecko.com/base-sepolia/all.json';
+export const TOKEN_LIST_API_URL = 'https://tokens.coingecko.com/base-sepolia/all.json';
 
 const FALLBACK_TOKEN_ADDRESSES: Record<string, Record<number, Address>> = {
   USDC: {
-    84532: USDC_BASE_SEPOLIA_ADDRESS, // Base Sepolia
-    8453: USDC_BASE_MAINNET_ADDRESS, // Base Mainnet
+    84532: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', // Base Sepolia
+    8453: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Base Mainnet
   },
 };
 
@@ -44,7 +35,6 @@ export function normalizeTokenSymbol(value: unknown): SupportedTokenSymbol {
  */
 export async function getTokenAddress(tokenSymbol: string, chainId: number): Promise<Address> {
   const symbol = tokenSymbol.toUpperCase();
-
   try {
     const response = await fetch(TOKEN_LIST_API_URL);
     if (response.ok) {
