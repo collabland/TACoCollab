@@ -142,13 +142,16 @@ export class TacoService {
 
     const baseGasPrice = await web3.publicClient.getGasPrice();
 
-    // Pimlico bundler enforces a minimum priority fee of 1_000_000 wei
-    // (see error: "maxPriorityFeePerGas must be at least 1000000").
+    // Pimlico bundler enforces minimum gas prices
+    // Use higher multipliers to ensure we meet Pimlico's requirements, especially on mainnet
     const MIN_PRIORITY_FEE = 1_000_000n;
     const suggestedPriorityFee = baseGasPrice / 10n;
 
+    // Higher multiplier for mainnet to ensure we meet Pimlico's minimum gas price requirements
+    const multiplier = chain === 'base-mainnet' ? 25n : 12n;
+
     const fee = {
-      maxFeePerGas: (baseGasPrice * 12n) / 10n,
+      maxFeePerGas: (baseGasPrice * multiplier) / 10n,
       maxPriorityFeePerGas:
         suggestedPriorityFee < MIN_PRIORITY_FEE ? MIN_PRIORITY_FEE : suggestedPriorityFee,
     };
