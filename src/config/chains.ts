@@ -4,7 +4,8 @@ import { getInfuraRpcUrl, getPimlicoBundlerUrl } from './rpc';
 
 export type SupportedChainKey = 'base-sepolia' | 'base-mainnet';
 
-export const DEFAULT_CHAIN_KEY: SupportedChainKey = 'base-sepolia';
+export const DEFAULT_CHAIN_KEY: SupportedChainKey =
+  process.env.TACO_ENV === 'PROD' ? 'base-mainnet' : 'base-sepolia';
 
 export interface ChainConfig {
   key: SupportedChainKey;
