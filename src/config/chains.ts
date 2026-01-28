@@ -42,7 +42,7 @@ export const CHAIN_CONFIG: Record<SupportedChainKey, ChainConfig> = {
     tacoDomain: domains.MAINNET,
     cohortId: 3,
     signingCoordinatorChildAddress: '0xdecd7F2056fb1653300fc2Ba1CbFe6203E731Ad3',
-    signingChainRpcUrl: 'https://mainnet.base.org',
+    signingChainRpcUrl: 'https://base.drpc.org',
     signingCoordinatorRpcUrl: getInfuraRpcUrl('mainnet'),
     bundlerUrl: getPimlicoBundlerUrl(8453),
   },
