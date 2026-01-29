@@ -145,11 +145,13 @@ export class TacoService {
     // Pimlico bundler enforces minimum gas prices
     // Use higher multipliers to ensure we meet Pimlico's requirements, especially on mainnet
     // Pimlico requires maxPriorityFeePerGas to be at least 1,200,000 wei on Base Mainnet
-    const MIN_PRIORITY_FEE = chain === 'base-mainnet' ? 1_200_000n : 1_000_000n;
+    // Adding extra buffer (1,500,000) to be safe and account for gas price fluctuations
+    const MIN_PRIORITY_FEE = chain === 'base-mainnet' ? 1_500_000n : 1_000_000n;
     const suggestedPriorityFee = baseGasPrice / 10n;
 
     // Higher multiplier for mainnet to ensure we meet Pimlico's minimum gas price requirements
-    const multiplier = chain === 'base-mainnet' ? 25n : 12n;
+    // Increased to 30x for extra buffer against gas price spikes
+    const multiplier = chain === 'base-mainnet' ? 30n : 12n;
 
     const fee = {
       maxFeePerGas: (baseGasPrice * multiplier) / 10n,
@@ -165,7 +167,8 @@ export class TacoService {
     });
 
     // Use higher gas limit for mainnet deployments (smart account creation requires more gas)
-    const verificationGasLimit = chain === 'base-mainnet' ? BigInt(1_500_000) : BigInt(500_000);
+    // Increased to 2,000,000 for extra buffer to handle complex deployments
+    const verificationGasLimit = chain === 'base-mainnet' ? BigInt(2_000_000) : BigInt(500_000);
 
     const userOp = await web3.bundlerClient.prepareUserOperation({
       account: smartAccount,
