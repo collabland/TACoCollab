@@ -76,15 +76,12 @@ export class ExecuteController {
         transactionExplorerUrl,
       });
     } catch (error) {
-      const errorId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-      console.error(`[execute] errorId=${errorId}`, error);
       const tokenToUse = String(
         (req.body as any)?.tokenSymbol ?? (req.body as any)?.token ?? TOKEN_SYMBOL.ETH,
       );
 
       const body: Record<string, unknown> = {
         error: getUserFriendlyError(error, tokenToUse),
-        errorId,
       };
 
       res.status(500).json(body);
