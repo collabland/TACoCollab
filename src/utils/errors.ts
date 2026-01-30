@@ -29,6 +29,22 @@ export function getUserFriendlyError(error: unknown, tokenSymbol: string): strin
     return 'Something went wrong. Please try again.';
   }
 
+  // TACo signing infra (porter) temporarily unavailable.
+  // Example: 503 Service Unavailable / "no healthy upstream" from https://porter.nucypher.io/sign
+  // Some HTTP clients surface only "no healthy upstream" without the URL; handle that too.
+  if (lower.includes('no healthy upstream')) {
+    return 'TACo signing service is temporarily unavailable. Please try again later.';
+  }
+  if (
+    (lower.includes('porter.nucypher.io') ||
+      lower.includes('nucypher') ||
+      lower.includes('porter') ||
+      lower.includes('/sign')) &&
+    (lower.includes('503') || lower.includes('service unavailable'))
+  ) {
+    return 'TACo signing service is temporarily unavailable. Please try again later.';
+  }
+
   // ETH preflight (from TacoService.assertEthBalanceSufficient)
   if (lower.includes('insufficient eth balance in smart account')) {
     return 'Insufficient ETH in sender smart account. Please fund the smart account with more ETH (for the transfer value + gas), or reduce the amount.';
