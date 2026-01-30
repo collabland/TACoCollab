@@ -5,10 +5,29 @@
 
 import { TOKEN_SYMBOL } from '../config/tokens';
 
+function looksLikeHtmlErrorPayload(input: string): boolean {
+  const lower = input.toLowerCase();
+  return (
+    lower.includes('<!doctype html') ||
+    lower.includes('<html') ||
+    lower.includes('<head') ||
+    lower.includes('<body') ||
+    lower.includes('herokucdn.com/error-pages') ||
+    lower.includes('<iframe') ||
+    // Some proxies return HTML but without doctype
+    (lower.includes('<title>') && lower.includes('</title>'))
+  );
+}
+
 export function getUserFriendlyError(error: unknown, tokenSymbol: string): string {
   const msg = error instanceof Error ? error.message : String(error);
   const t = (tokenSymbol || TOKEN_SYMBOL.ETH).toUpperCase();
   const lower = msg.toLowerCase();
+
+  // If upstream returned HTML (e.g. Heroku error page), never surface it to end users.
+  if (looksLikeHtmlErrorPayload(msg)) {
+    return 'Something went wrong. Please try again.';
+  }
 
   // ETH preflight (from TacoService.assertEthBalanceSufficient)
   if (lower.includes('insufficient eth balance in smart account')) {
@@ -46,11 +65,12 @@ export function getUserFriendlyError(error: unknown, tokenSymbol: string): strin
     return 'Gas estimation failed. The transaction may not be valid.';
   }
 
-  if (msg.length > 200) return msg.slice(0, 200) + '...';
-  return msg;
+  // Default: don't leak arbitrary internal errors to end users.
+  return 'Something went wrong. Please try again.';
 }
 
 export function getRawErrorString(error: unknown, maxLen = 500): string {
   const raw = error instanceof Error ? error.message : String(error);
+  if (looksLikeHtmlErrorPayload(raw)) return 'Application error.';
   return raw.length > maxLen ? raw.slice(0, maxLen) + '...' : raw;
 }
