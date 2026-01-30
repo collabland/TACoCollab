@@ -43,9 +43,13 @@ export function getUserFriendlyError(error: unknown, tokenSymbol: string): strin
     lower.includes('eth_estimateuseroperationgas') ||
     lower.includes('bundler rejected') ||
     (lower.includes('execution reverted') && lower.includes('reason: 0x'))
-  ) {
-    return `Transaction failed. Please check the sender smart account has enough ${t} (and ETH for gas), then try again.`;
-  }
+  )
+    return (
+      'Transaction simulation failed (bundler rejected the UserOperation). ' +
+      `Common causes: sender smart account has insufficient ${t} (and/or ETH for gas or ETH value transfers), ` +
+      'or the paymaster/bundler policy disallows this call. ' +
+      'Check the smart account balances (ETH + token) and retry; if still failing, try without sponsorship or use a different bundler/paymaster.'
+    );
 
   if (lower.includes('transfer amount exceeds balance')) {
     return `Insufficient ${t} balance. Sender smart account doesn't have enough ${t}.`;

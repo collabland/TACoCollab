@@ -76,6 +76,7 @@ export class ExecuteController {
         transactionExplorerUrl,
       });
     } catch (error) {
+      console.error(error);
       const tokenToUse = String(
         (req.body as any)?.tokenSymbol ?? (req.body as any)?.token ?? TOKEN_SYMBOL.ETH,
       );
