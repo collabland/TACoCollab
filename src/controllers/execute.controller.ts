@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { TacoService } from '../services/taco.service';
 import { getChainKeyFromRequest } from '../utils/chain';
 import { getTxExplorerBaseUrl } from '../utils/explorer';
-import { getRawErrorString, getUserFriendlyError } from '../utils/errors';
+import { getUserFriendlyError } from '../utils/errors';
 import { TOKEN_SYMBOL } from '../config/tokens';
 
 export class ExecuteController {
@@ -76,14 +76,18 @@ export class ExecuteController {
         transactionExplorerUrl,
       });
     } catch (error) {
-      console.error(error);
+      const errorId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      console.error(`[execute] errorId=${errorId}`, error);
       const tokenToUse = String(
         (req.body as any)?.tokenSymbol ?? (req.body as any)?.token ?? TOKEN_SYMBOL.ETH,
       );
-      res.status(500).json({
+
+      const body: Record<string, unknown> = {
         error: getUserFriendlyError(error, tokenToUse),
-        rawError: getRawErrorString(error, 500),
-      });
+        errorId,
+      };
+
+      res.status(500).json(body);
     }
   }
 }
