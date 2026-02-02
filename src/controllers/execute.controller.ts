@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { TacoService } from '../services/taco.service';
 import { getChainKeyFromRequest } from '../utils/chain';
 import { getTxExplorerBaseUrl } from '../utils/explorer';
-import { getUserFriendlyError } from '../utils/errors';
+import { getUserFriendlyError, HttpError } from '../utils/errors';
 import { TOKEN_SYMBOL } from '../config/tokens';
 
 export class ExecuteController {
@@ -17,6 +17,7 @@ export class ExecuteController {
         discordSignature,
         discordPayload,
         tokenSymbol,
+        senderWalletAddress,
       } = req.body;
       if (!userId) {
         res.status(400).json({ error: 'userId is required' });
@@ -45,6 +46,36 @@ export class ExecuteController {
 
       const tacoService = TacoService.getInstance();
       const chainKey = getChainKeyFromRequest(req);
+
+      // Preflight: check sender SMART ACCOUNT balance (not EOA wallet) before attempting execution.
+      // 1) getBalance() call at start
+      const preflight = await tacoService.getBalance({
+        userId: String(userId),
+        chain: chainKey,
+        amount: amountToUse,
+        tokenSymbol: tokenToUse,
+        discordPayload: String(discordPayload),
+      });
+
+      // 2) if (balance < required) return error
+      if (!preflight.sufficient) {
+        res.status(400).json({
+          error: `Your balance is insufficient to send a tip of ${preflight.amount} ${preflight.tokenSymbol}. Current balance: ${preflight.balance} ${preflight.tokenSymbol}.`,
+          chain: chainKey,
+          senderSmartAccount: preflight.smartAccountAddress,
+          tokenSymbol: preflight.tokenSymbol,
+          requestedAmount: preflight.amount,
+          currentBalance: preflight.balance,
+          note:
+            preflight.tokenSymbol === TOKEN_SYMBOL.ETH
+              ? 'ETH transfers also require additional ETH for gas.'
+              : undefined,
+          // keep senderWalletAddress if callers rely on it
+          senderWalletAddress,
+        });
+        return;
+      }
+
       const result = await tacoService.transferFromSmartAccount({
         userId: String(userId),
         to,
@@ -85,7 +116,8 @@ export class ExecuteController {
         error: getUserFriendlyError(error, tokenToUse),
       };
 
-      res.status(500).json(body);
+      const status = error instanceof HttpError ? error.statusCode : 500;
+      res.status(status).json(body);
     }
   }
 }

@@ -5,6 +5,16 @@
 
 import { TOKEN_SYMBOL } from '../config/tokens';
 
+export class HttpError extends Error {
+  public readonly statusCode: number;
+
+  constructor(statusCode: number, message: string) {
+    super(message);
+    this.statusCode = statusCode;
+    this.name = 'HttpError';
+  }
+}
+
 function looksLikeHtmlErrorPayload(input: string): boolean {
   const lower = input.toLowerCase();
   return (
@@ -20,6 +30,8 @@ function looksLikeHtmlErrorPayload(input: string): boolean {
 }
 
 export function getUserFriendlyError(error: unknown, tokenSymbol: string): string {
+  if (error instanceof HttpError) return error.message;
+
   const msg = error instanceof Error ? error.message : String(error);
   const t = (tokenSymbol || TOKEN_SYMBOL.ETH).toUpperCase();
   const lower = msg.toLowerCase();
@@ -32,6 +44,11 @@ export function getUserFriendlyError(error: unknown, tokenSymbol: string): strin
   // ETH preflight (from TacoService.assertEthBalanceSufficient)
   if (lower.includes('insufficient eth balance in smart account')) {
     return 'Insufficient ETH in sender smart account. Please fund the smart account with more ETH (for the transfer value + gas), or reduce the amount.';
+  }
+
+  // Amount parsing / precision issues (ethers.js)
+  if (lower.includes('fractional component exceeds decimals')) {
+    return `Invalid amount: too many decimal places for ${t}.`;
   }
 
   // AA / bundler simulation failures (common with Pimlico):
