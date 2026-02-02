@@ -206,7 +206,7 @@ export class TacoService {
    * This mirrors the same Discord override rules as execution (amount/token from payload),
    * and checks the derived **smart account** balance (not the EOA wallet).
    */
-  public async getBalance(params: {
+  public async validateTip(params: {
     userId: string;
     chain: SupportedChainKey;
     amount: string;

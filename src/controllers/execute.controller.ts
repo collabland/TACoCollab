@@ -49,7 +49,7 @@ export class ExecuteController {
 
       // Preflight: check sender SMART ACCOUNT balance (not EOA wallet) before attempting execution.
       // 1) getBalance() call at start
-      const preflight = await tacoService.getBalance({
+      const preflight = await tacoService.validateTip({
         userId: String(userId),
         chain: chainKey,
         amount: amountToUse,
