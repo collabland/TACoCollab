@@ -12,6 +12,7 @@ import {
   TOKEN_SYMBOL,
 } from '../config/tokens';
 import { createViemTacoAccount, getCollabLandId } from '../utils/taco-account';
+import { HttpError } from '../utils/errors';
 import { Web3Service } from './web3.service';
 
 const ERC20_TRANSFER_ABI = [
@@ -196,6 +197,103 @@ export class TacoService {
       tokenSymbol,
       userOpHash,
       transactionHash: receipt.transactionHash,
+    };
+  }
+
+  /**
+   * Execute preflight: fetch balance + check sufficiency before execution.
+   *
+   * This mirrors the same Discord override rules as execution (amount/token from payload),
+   * and checks the derived **smart account** balance (not the EOA wallet).
+   */
+  public async validateTip(params: {
+    userId: string;
+    chain: SupportedChainKey;
+    amount: string;
+    tokenSymbol?: SupportedTokenSymbol | string;
+    discordPayload?: string;
+  }): Promise<{
+    smartAccountAddress: string;
+    tokenSymbol: SupportedTokenSymbol;
+    tokenAddress: Address | null;
+    tokenDecimals: number;
+    amount: string;
+    balance: string;
+    sufficient: boolean;
+  }> {
+    await this.initializeTaco();
+
+    const web3 = Web3Service.getInstance(params.chain);
+    const { smartAccount } = await this.getSmartAccount(params.userId, params.chain);
+    const smartAccountAddress = (smartAccount as { address: string }).address;
+
+    // Mirror the same resolution logic as transferFromSmartAccount
+    let tokenSymbol: SupportedTokenSymbol = normalizeTokenSymbol(params.tokenSymbol);
+    let amountStr = params.amount;
+    if (params.discordPayload) {
+      const discordOverrides = this.tryParseDiscordExecuteOverrides(params.discordPayload);
+      if (discordOverrides.amountStr) amountStr = discordOverrides.amountStr;
+      if (discordOverrides.tokenSymbol) tokenSymbol = discordOverrides.tokenSymbol;
+    }
+
+    const chainId = CHAIN_CONFIG[params.chain].chainId;
+    const { tokenAddress, tokenDecimals } = await this.getTokenMetaForChain(
+      tokenSymbol,
+      chainId,
+      web3.signingChainProvider,
+    );
+
+    if (tokenSymbol === TOKEN_SYMBOL.ETH) {
+      let requiredAmount: ethers.BigNumber;
+      try {
+        requiredAmount = ethers.utils.parseEther(amountStr);
+      } catch (err) {
+        throw new HttpError(
+          400,
+          `Invalid amount "${amountStr}" for ${TOKEN_SYMBOL.ETH}. Max 18 decimal places.`,
+        );
+      }
+      const currentBalance = await web3.signingChainProvider.getBalance(smartAccountAddress);
+      return {
+        smartAccountAddress,
+        tokenSymbol,
+        tokenAddress,
+        tokenDecimals,
+        amount: amountStr,
+        balance: ethers.utils.formatEther(currentBalance),
+        sufficient: currentBalance.gte(requiredAmount),
+      };
+    }
+
+    if (!tokenAddress) {
+      throw new Error(`Missing token address for ERC20 balance check (${tokenSymbol})`);
+    }
+
+    let requiredAmount: ethers.BigNumber;
+    try {
+      requiredAmount = ethers.utils.parseUnits(amountStr, tokenDecimals);
+    } catch (err) {
+      throw new HttpError(
+        400,
+        `Invalid amount "${amountStr}" for ${tokenSymbol}. Max ${tokenDecimals} decimal places.`,
+      );
+    }
+
+    const tokenContract = new ethers.Contract(
+      tokenAddress as string,
+      ['function balanceOf(address) view returns (uint256)'],
+      web3.signingChainProvider,
+    );
+    const currentBalance = (await tokenContract.balanceOf(smartAccountAddress)) as ethers.BigNumber;
+
+    return {
+      smartAccountAddress,
+      tokenSymbol,
+      tokenAddress,
+      tokenDecimals,
+      amount: amountStr,
+      balance: ethers.utils.formatUnits(currentBalance, tokenDecimals),
+      sufficient: currentBalance.gte(requiredAmount),
     };
   }
 
