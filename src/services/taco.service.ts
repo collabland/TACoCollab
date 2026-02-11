@@ -76,6 +76,13 @@ export class TacoService {
       signature: string;
       payload: string;
     };
+    /**
+     * By default, we best-effort override execution params from the Discord payload,
+     * including `receiver` (Discord user id) -> receiver smart account address.
+     *
+     * For flows like "withdraw to address", the receiver must NOT be overridden.
+     */
+    allowDiscordReceiverOverride?: boolean;
   }): Promise<{
     smartAccountAddress: string;
     to: string;
@@ -99,7 +106,8 @@ export class TacoService {
     const discordOverrides = this.tryParseDiscordExecuteOverrides(discordContext.payload);
     if (discordOverrides.amountStr) transferAmountStr = discordOverrides.amountStr;
     if (discordOverrides.tokenSymbol) tokenSymbol = discordOverrides.tokenSymbol;
-    if (discordOverrides.receiverUserId) {
+    const allowReceiverOverride = params.allowDiscordReceiverOverride ?? true;
+    if (allowReceiverOverride && discordOverrides.receiverUserId) {
       const { smartAccount: recipientSmartAccount } = await this.getSmartAccount(
         discordOverrides.receiverUserId,
         chain,
@@ -315,7 +323,7 @@ export class TacoService {
 
       // NOTE: must compare both sides; `'send'` alone is always truthy.
       const executeCmd = parsed?.data?.options?.find(
-        (o) => o?.name === 'execute' || o?.name === 'send',
+        (o) => o?.name === 'execute' || o?.name === 'send' || o?.name === 'withdraw',
       );
       const opts = executeCmd?.options ?? [];
 
@@ -550,14 +558,46 @@ export class TacoService {
       ':signature': normalizedSignature.slice(0, 10) + '...',
     });
 
-    return await signUserOp(
-      web3.signingCoordinatorProvider,
-      chainConfig.tacoDomain,
-      chainConfig.cohortId,
-      chainConfig.chainId,
-      userOp as UserOperationToSign,
-      this.AA_VERSION,
-      signingContext,
-    );
+    try {
+      return await signUserOp(
+        web3.signingCoordinatorProvider,
+        chainConfig.tacoDomain,
+        chainConfig.cohortId,
+        chainConfig.chainId,
+        userOp as UserOperationToSign,
+        this.AA_VERSION,
+        signingContext,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const lower = msg.toLowerCase();
+
+      // TACo "action control" policy conditions can refuse to sign.
+      if (
+        lower.includes('threshold of signatures not met') ||
+        lower.includes('taco signing failed') ||
+        lower.includes('conditions not satisfied')
+      ) {
+        // Special case: policy expects a `receiver` option in the Discord payload, but withdraw uses `address`.
+        if (
+          lower.includes('no matches found for the jsonpath query') &&
+          lower.includes('receiver')
+        ) {
+          throw new HttpError(
+            400,
+            'Withdraw could not be authorized: TACo policy expects a Discord payload option named "receiver", but the withdraw command is sending "address". ' +
+              'Fix: rename the slash command option from "address" to "receiver" (or update the TACo policy JSONPath to read "address").',
+          );
+        }
+
+        throw new HttpError(
+          403,
+          'Withdraw could not be authorized by TACo (policy conditions not satisfied). ' +
+            'This is not a blockchain error—TACo nodes refused to sign the UserOperation under the current policy.',
+        );
+      }
+
+      throw err;
+    }
   }
 }

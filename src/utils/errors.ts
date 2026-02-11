@@ -41,6 +41,19 @@ export function getUserFriendlyError(error: unknown, tokenSymbol: string): strin
     return 'Something went wrong. Please try again.';
   }
 
+  // TACo signing / policy conditions
+  // When nodes refuse to sign, threshold is not met (often "Conditions not satisfied").
+  if (
+    lower.includes('threshold of signatures not met') ||
+    lower.includes('taco signing failed') ||
+    lower.includes('conditions not satisfied')
+  ) {
+    return (
+      'Withdrawal could not be authorized by TACo (policy conditions not satisfied). ' +
+      'Please re-run the command and ensure the same token/amount/address shown in Discord matches the request. ' +
+      'If this keeps happening, the withdraw action may not be allowed by the current TACo policy on this chain.'
+    );
+  }
   // TACo signing infra (porter) temporarily unavailable.
   // Example: 503 Service Unavailable / "no healthy upstream" from https://porter.nucypher.io/sign
   // Some HTTP clients surface only "no healthy upstream" without the URL; handle that too.
