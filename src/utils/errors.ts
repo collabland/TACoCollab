@@ -41,6 +41,35 @@ export function getUserFriendlyError(error: unknown, tokenSymbol: string): strin
     return 'Something went wrong. Please try again.';
   }
 
+  // TACo signing / policy conditions
+  // When nodes refuse to sign, threshold is not met (often "Conditions not satisfied").
+  if (
+    lower.includes('threshold of signatures not met') ||
+    lower.includes('taco signing failed') ||
+    lower.includes('conditions not satisfied')
+  ) {
+    return (
+      'Withdrawal could not be authorized by TACo (policy conditions not satisfied). ' +
+      'Please re-run the command and ensure the same token/amount/address shown in Discord matches the request. ' +
+      'If this keeps happening, the withdraw action may not be allowed by the current TACo policy on this chain.'
+    );
+  }
+  // TACo signing infra (porter) temporarily unavailable.
+  // Example: 503 Service Unavailable / "no healthy upstream" from https://porter.nucypher.io/sign
+  // Some HTTP clients surface only "no healthy upstream" without the URL; handle that too.
+  if (lower.includes('no healthy upstream')) {
+    return 'TACo signing service is temporarily unavailable. Please try again later.';
+  }
+  if (
+    (lower.includes('porter.nucypher.io') ||
+      lower.includes('nucypher') ||
+      lower.includes('porter') ||
+      lower.includes('/sign')) &&
+    (lower.includes('503') || lower.includes('service unavailable'))
+  ) {
+    return 'TACo signing service is temporarily unavailable. Please try again later.';
+  }
+
   // ETH preflight (from TacoService.assertEthBalanceSufficient)
   if (lower.includes('insufficient eth balance in smart account')) {
     return 'Insufficient ETH in sender smart account. Please fund the smart account with more ETH (for the transfer value + gas), or reduce the amount.';
