@@ -58,6 +58,8 @@ export class TacoService {
 
     return {
       address: (smartAccount as { address: string }).address,
+      chain: chainKey,
+      chainId: CHAIN_CONFIG[chainKey].chainId,
       threshold,
       // This service only derives the counterfactual address; actual deployment
       // happens when a UserOperation is executed on-chain.
